@@ -85,6 +85,11 @@ osMessageQueueId_t ButtonMessageHandle;
 const osMessageQueueAttr_t ButtonMessage_attributes = {
   .name = "ButtonMessage"
 };
+/* Definitions for UartMessage */
+osMessageQueueId_t UartMessageHandle;
+const osMessageQueueAttr_t UartMessage_attributes = {
+  .name = "UartMessage"
+};
 /* USER CODE BEGIN PV */
 
 #define COUNTOF(__BUFFER__)   (sizeof(__BUFFER__) / sizeof(*(__BUFFER__)))
@@ -210,6 +215,9 @@ Error_Handler();
   /* Create the queue(s) */
   /* creation of ButtonMessage */
   ButtonMessageHandle = osMessageQueueNew (16, sizeof(ButtonMessage_t), &ButtonMessage_attributes);
+
+  /* creation of UartMessage */
+  UartMessageHandle = osMessageQueueNew (40, sizeof(uint16_t), &UartMessage_attributes);
 
   /* USER CODE BEGIN RTOS_QUEUES */
   /* add queues, ... */
@@ -357,7 +365,7 @@ static void MX_DMA_Init(void)
 
   /* DMA interrupt init */
   /* DMA1_Stream0_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA1_Stream0_IRQn, 9, 0);
+  HAL_NVIC_SetPriority(DMA1_Stream0_IRQn, 5, 0);
   HAL_NVIC_EnableIRQ(DMA1_Stream0_IRQn);
 
 }
