@@ -59,12 +59,24 @@ __IO uint32_t BspButtonState = BUTTON_RELEASED;
 UART_HandleTypeDef huart3;
 DMA_HandleTypeDef hdma_usart3_rx;
 
-/* Definitions for defaultTask */
-osThreadId_t defaultTaskHandle;
-const osThreadAttr_t defaultTask_attributes = {
-  .name = "defaultTask",
-  .stack_size = 128 * 4,
+/* Definitions for UartReception */
+osThreadId_t UartReceptionHandle;
+const osThreadAttr_t UartReception_attributes = {
+  .name = "UartReception",
+  .stack_size = 512 * 4,
   .priority = (osPriority_t) osPriorityNormal,
+};
+/* Definitions for UserButton */
+osThreadId_t UserButtonHandle;
+const osThreadAttr_t UserButton_attributes = {
+  .name = "UserButton",
+  .stack_size = 256 * 4,
+  .priority = (osPriority_t) osPriorityNormal,
+};
+/* Definitions for ButtonMessage */
+osMessageQueueId_t ButtonMessageHandle;
+const osMessageQueueAttr_t ButtonMessage_attributes = {
+  .name = "ButtonMessage"
 };
 /* USER CODE BEGIN PV */
 
@@ -95,7 +107,8 @@ void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_DMA_Init(void);
 static void MX_USART3_UART_Init(void);
-void StartDefaultTask(void *argument);
+void UartReceptionTask(void *argument);
+void UserButtonTask(void *argument);
 
 /* USER CODE BEGIN PFP */
 void PrintInfo(UART_HandleTypeDef *huart, uint8_t *String, uint16_t Size);
@@ -187,13 +200,20 @@ Error_Handler();
   /* start timers, add new ones, ... */
   /* USER CODE END RTOS_TIMERS */
 
+  /* Create the queue(s) */
+  /* creation of ButtonMessage */
+  ButtonMessageHandle = osMessageQueueNew (16, sizeof(ButtonMessage_t), &ButtonMessage_attributes);
+
   /* USER CODE BEGIN RTOS_QUEUES */
   /* add queues, ... */
   /* USER CODE END RTOS_QUEUES */
 
   /* Create the thread(s) */
-  /* creation of defaultTask */
-  defaultTaskHandle = osThreadNew(StartDefaultTask, NULL, &defaultTask_attributes);
+  /* creation of UartReception */
+  UartReceptionHandle = osThreadNew(UartReceptionTask, NULL, &UartReception_attributes);
+
+  /* creation of UserButton */
+  UserButtonHandle = osThreadNew(UserButtonTask, NULL, &UserButton_attributes);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
@@ -594,14 +614,14 @@ PUTCHAR_PROTOTYPE
 
 /* USER CODE END 4 */
 
-/* USER CODE BEGIN Header_StartDefaultTask */
+/* USER CODE BEGIN Header_UartReceptionTask */
 /**
-  * @brief  Function implementing the defaultTask thread.
+  * @brief  Function implementing the UartReception thread.
   * @param  argument: Not used
   * @retval None
   */
-/* USER CODE END Header_StartDefaultTask */
-void StartDefaultTask(void *argument)
+/* USER CODE END Header_UartReceptionTask */
+void UartReceptionTask(void *argument)
 {
   /* USER CODE BEGIN 5 */
   /* Infinite loop */
@@ -610,6 +630,24 @@ void StartDefaultTask(void *argument)
     osDelay(1);
   }
   /* USER CODE END 5 */
+}
+
+/* USER CODE BEGIN Header_UserButtonTask */
+/**
+* @brief Function implementing the UserButton thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_UserButtonTask */
+void UserButtonTask(void *argument)
+{
+  /* USER CODE BEGIN UserButtonTask */
+  /* Infinite loop */
+  for(;;)
+  {
+    osDelay(1);
+  }
+  /* USER CODE END UserButtonTask */
 }
 
 /**
