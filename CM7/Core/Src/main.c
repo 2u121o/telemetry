@@ -78,7 +78,7 @@ osThreadId_t UserButtonHandle;
 const osThreadAttr_t UserButton_attributes = {
   .name = "UserButton",
   .stack_size = 256 * 4,
-  .priority = (osPriority_t) osPriorityNormal,
+  .priority = (osPriority_t) osPriorityBelowNormal,
 };
 /* Definitions for ButtonMessage */
 osMessageQueueId_t ButtonMessageHandle;
