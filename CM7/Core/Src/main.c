@@ -108,7 +108,7 @@ uint8_t aRXBufferUser[RX_BUFFER_SIZE];
 uint8_t aRXBufferA[RX_BUFFER_SIZE];
 uint8_t aRXBufferB[RX_BUFFER_SIZE];
 
-__IO uint32_t     uwNbReceivedChars;
+__IO uint32_t uwNbReceivedChars;
 uint8_t *pBufferReadyForUser;
 uint8_t *pBufferReadyForReception;
 
@@ -464,7 +464,7 @@ void StartReception(void)
   uwNbReceivedChars        = 0;
 
   /* Print user info on PC com port */
-//  PrintInfo(&huart3, aTextInfoStart, COUNTOF(aTextInfoStart));
+  PrintInfo(&huart3, aTextInfoStart, COUNTOF(aTextInfoStart));
 
   /* Initializes Rx sequence using Reception To Idle event API.
      As DMA channel associated to UART Rx is configured as Circular,
