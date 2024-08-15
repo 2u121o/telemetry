@@ -587,7 +587,7 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
   if (huart->Instance == USART3)
   {
     // Send message to queue from ISR
-    osMessageQueuePut(ButtonMessageHandle, &Size, 0, 0);
+    osMessageQueuePut(UartMessageHandle, &Size, 0, 0);
   }
 }
 
@@ -626,7 +626,7 @@ void UartReceptionTask(void *argument)
   /* Infinite loop */
   for(;;)
   {
-    if (osMessageQueueGet(ButtonMessageHandle, &rxSize, NULL, osWaitForever) == osOK)
+    if (osMessageQueueGet(UartMessageHandle, &rxSize, NULL, osWaitForever) == osOK)
     {
       UartRxCheck(&huart3, rxSize);
     }
@@ -673,14 +673,14 @@ void UserButtonTask(void *argument)
     {
       // Check if the received message is for our specific button
       if (receivedMessage.buttonType == BUTTON_USER && receivedMessage.buttonState == BUTTON_PRESSED)
-        {
-          /* Update button state */
-          BspButtonState = BUTTON_RELEASED;
-          /* -- Sample board code to toggle leds ---- */
-          BSP_LED_Toggle(LED_GREEN);
-          BSP_LED_Toggle(LED_YELLOW);
-          BSP_LED_Toggle(LED_RED);
-          /* ..... Perform your action ..... */
+      {
+        /* Update button state */
+        BspButtonState = BUTTON_RELEASED;
+        /* -- Sample board code to toggle leds ---- */
+        BSP_LED_Toggle(LED_GREEN);
+        BSP_LED_Toggle(LED_YELLOW);
+        BSP_LED_Toggle(LED_RED);
+        /* ..... Perform your action ..... */
       }
       osDelay(25);
     }
