@@ -93,7 +93,7 @@ const osMessageQueueAttr_t UartMessage_attributes = {
 /* USER CODE BEGIN PV */
 
 #define COUNTOF(__BUFFER__)   (sizeof(__BUFFER__) / sizeof(*(__BUFFER__)))
-#define RX_BUFFER_SIZE   20
+#define RX_BUFFER_SIZE   64
 
 /**
   * @brief Text strings printed on PC Com port for user information
