@@ -672,9 +672,7 @@ void UserButtonTask(void *argument)
     if (osMessageQueueGet(ButtonMessageHandle, &receivedMessage, NULL, osWaitForever) == osOK)
     {
       // Check if the received message is for our specific button
-      if (receivedMessage.buttonType == BUTTON_USER)
-      {
-        if (receivedMessage.buttonState == BUTTON_PRESSED)
+      if (receivedMessage.buttonType == BUTTON_USER && receivedMessage.buttonState == BUTTON_PRESSED)
         {
           /* Update button state */
           BspButtonState = BUTTON_RELEASED;
@@ -683,7 +681,6 @@ void UserButtonTask(void *argument)
           BSP_LED_Toggle(LED_YELLOW);
           BSP_LED_Toggle(LED_RED);
           /* ..... Perform your action ..... */
-        }
       }
       osDelay(25);
     }
