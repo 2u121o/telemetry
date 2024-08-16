@@ -93,7 +93,7 @@ const osMessageQueueAttr_t UartMessage_attributes = {
 /* USER CODE BEGIN PV */
 
 #define COUNTOF(__BUFFER__)   (sizeof(__BUFFER__) / sizeof(*(__BUFFER__)))
-#define RX_BUFFER_SIZE   64
+#define RX_BUFFER_SIZE   20
 
 /**
   * @brief Text strings printed on PC Com port for user information
@@ -168,23 +168,23 @@ int main(void)
 
   /* Configure the system clock */
   SystemClock_Config();
-/* USER CODE BEGIN Boot_Mode_Sequence_2 */
-/* When system initialization is finished, Cortex-M7 will release Cortex-M4 by means of
-HSEM notification */
-/*HW semaphore Clock enable*/
-__HAL_RCC_HSEM_CLK_ENABLE();
-/*Take HSEM */
-HAL_HSEM_FastTake(HSEM_ID_0);
-/*Release HSEM in order to notify the CPU2(CM4)*/
-HAL_HSEM_Release(HSEM_ID_0,0);
-/* wait until CPU2 wakes up from stop mode */
-timeout = 0xFFFF;
-while((__HAL_RCC_GET_FLAG(RCC_FLAG_D2CKRDY) == RESET) && (timeout-- > 0));
-if ( timeout < 0 )
-{
-Error_Handler();
-}
-/* USER CODE END Boot_Mode_Sequence_2 */
+  /* USER CODE BEGIN Boot_Mode_Sequence_2 */
+  /* When system initialization is finished, Cortex-M7 will release Cortex-M4 by means of
+  HSEM notification */
+  /*HW semaphore Clock enable*/
+  __HAL_RCC_HSEM_CLK_ENABLE();
+  /*Take HSEM */
+  HAL_HSEM_FastTake(HSEM_ID_0);
+  /*Release HSEM in order to notify the CPU2(CM4)*/
+  HAL_HSEM_Release(HSEM_ID_0, 0);
+  /* wait until CPU2 wakes up from stop mode */
+  timeout = 0xFFFF;
+  while ((__HAL_RCC_GET_FLAG(RCC_FLAG_D2CKRDY) == RESET) && (timeout-- > 0));
+  if (timeout < 0)
+  {
+    Error_Handler();
+  }
+  /* USER CODE END Boot_Mode_Sequence_2 */
 
   /* USER CODE BEGIN SysInit */
 
@@ -457,8 +457,8 @@ void PrintInfo(UART_HandleTypeDef *huart, uint8_t *String, uint16_t Size)
 void StartReception(void)
 {
   /* Initializes Buffer swap mechanism (used in User callback) :
-     - 2 physical buffers aRXBufferA and aRXBufferB (RX_BUFFER_SIZE length)
-  */
+  - 2 physical buffers aRXBufferA and aRXBufferB (RX_BUFFER_SIZE length)
+   */
   pBufferReadyForReception = aRXBufferA;
   pBufferReadyForUser      = aRXBufferB;
   uwNbReceivedChars        = 0;
@@ -467,16 +467,16 @@ void StartReception(void)
   PrintInfo(&huart3, aTextInfoStart, COUNTOF(aTextInfoStart));
 
   /* Initializes Rx sequence using Reception To Idle event API.
-     As DMA channel associated to UART Rx is configured as Circular,
-     reception is endless.
-     If reception has to be stopped, call to HAL_UART_AbortReceive() could be used.
+  As DMA channel associated to UART Rx is configured as Circular,
+  reception is endless.
+  If reception has to be stopped, call to HAL_UART_AbortReceive() could be used.
 
-     Use of HAL_UARTEx_ReceiveToIdle_DMA service, will generate calls to
-     user defined HAL_UARTEx_RxEventCallback callback for each occurrence of
-     following events :
-     - DMA RX Half Transfer event (HT)
-     - DMA RX Transfer Complete event (TC)
-     - IDLE event on UART Rx line (indicating a pause is UART reception flow)
+  Use of HAL_UARTEx_ReceiveToIdle_DMA service, will generate calls to
+  user defined HAL_UARTEx_RxEventCallback callback for each occurrence of
+  following events :
+  - DMA RX Half Transfer event (HT)
+  - DMA RX Transfer Complete event (TC)
+  - IDLE event on UART Rx line (indicating a pause is UART reception flow)
   */
   if (HAL_OK != HAL_UARTEx_ReceiveToIdle_DMA(&huart3, aRXBufferUser, RX_BUFFER_SIZE))
   {
@@ -506,12 +506,11 @@ void UserDataTreatment(UART_HandleTypeDef *huart, uint8_t* pData, uint16_t Size)
    *
    */
   uint8_t* pBuff = pData;
-  uint8_t  i;
 
   /* Implementation of loopback is on purpose implemented in direct register access,
-     in order to be able to echo received characters as fast as they are received.
-     Wait for TC flag to be raised at end of transmit is then removed, only TXE is checked */
-  for (i = 0; i < Size; i++)
+    in order to be able to echo received characters as fast as they are received.
+    Wait for TC flag to be raised at end of transmit is then removed, only TXE is checked */
+  for (uint8_t i = 0; i < Size; i++)
   {
     while (!(__HAL_UART_GET_FLAG(huart, UART_FLAG_TXE))) {}
     huart->Instance->TDR = *pBuff;
@@ -530,7 +529,7 @@ void UartRxCheck(UART_HandleTypeDef *huart, uint16_t Size)
   if (Size != old_pos)
   {
     /* Check if position of index in reception buffer has simply be increased
-       of if end of buffer has been reached */
+     of if end of buffer has been reached */
     if (Size > old_pos)
     {
       /* Current position is higher than previous one */
@@ -570,7 +569,7 @@ void UartRxCheck(UART_HandleTypeDef *huart, uint16_t Size)
     pBufferReadyForReception = ptemp;
   }
   /* Update old_pos as new reference of position in User Rx buffer that
-     indicates position to which data have been processed */
+  indicates position to which data have been processed */
   old_pos = Size;
 }
 
@@ -621,14 +620,14 @@ void UartReceptionTask(void *argument)
   /* Initiate Continuous reception */
   StartReception();
 
-  uint16_t rxSize;
+  uint16_t uartIncomingSize = 0;
 
   /* Infinite loop */
-  for(;;)
+  for (;;)
   {
-    if (osMessageQueueGet(UartMessageHandle, &rxSize, NULL, osWaitForever) == osOK)
+    if (osMessageQueueGet(UartMessageHandle, &uartIncomingSize, NULL, osWaitForever) == osOK)
     {
-      UartRxCheck(&huart3, rxSize);
+      UartRxCheck(&huart3, uartIncomingSize);
     }
     osDelay(1);
   }
