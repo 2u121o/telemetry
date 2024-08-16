@@ -93,20 +93,20 @@ const osMessageQueueAttr_t UartMessage_attributes = {
 /* USER CODE BEGIN PV */
 
 #define COUNTOF(__BUFFER__)   (sizeof(__BUFFER__) / sizeof(*(__BUFFER__)))
-#define RX_BUFFER_SIZE   20
+#define UART_DMA_RX_BUFFER_SIZE 64
 
 /**
   * @brief Text strings printed on PC Com port for user information
   */
 uint8_t aTextInfoStart[] = "\r\nUSART Example : Enter characters to fill reception buffers.\r\n";
 
-uint8_t aRXBufferUser[RX_BUFFER_SIZE];
+uint8_t aRXBufferUser[UART_DMA_RX_BUFFER_SIZE];
 
 /**
   * @brief Data buffers used to manage received data in interrupt routine
   */
-uint8_t aRXBufferA[RX_BUFFER_SIZE];
-uint8_t aRXBufferB[RX_BUFFER_SIZE];
+uint8_t aRXBufferA[UART_DMA_RX_BUFFER_SIZE];
+uint8_t aRXBufferB[UART_DMA_RX_BUFFER_SIZE];
 
 __IO uint32_t uwNbReceivedChars;
 uint8_t *pBufferReadyForUser;
@@ -124,7 +124,7 @@ void UserButtonTask(void *argument);
 
 /* USER CODE BEGIN PFP */
 void PrintInfo(UART_HandleTypeDef *huart, uint8_t *String, uint16_t Size);
-void StartReception(void);
+void StartReception(UART_HandleTypeDef *huart);
 void UserDataTreatment(UART_HandleTypeDef *huart, uint8_t* pData, uint16_t Size);
 void UartRxCheck(UART_HandleTypeDef *huart, uint16_t Size);
 /* USER CODE END PFP */
@@ -454,7 +454,7 @@ void PrintInfo(UART_HandleTypeDef *huart, uint8_t *String, uint16_t Size)
   * @brief  This function prints user info on PC com port and initiates RX transfer
   * @retval None
   */
-void StartReception(void)
+void StartReception(UART_HandleTypeDef *huart)
 {
   /* Initializes Buffer swap mechanism (used in User callback) :
   - 2 physical buffers aRXBufferA and aRXBufferB (RX_BUFFER_SIZE length)
@@ -478,7 +478,7 @@ void StartReception(void)
   - DMA RX Transfer Complete event (TC)
   - IDLE event on UART Rx line (indicating a pause is UART reception flow)
   */
-  if (HAL_OK != HAL_UARTEx_ReceiveToIdle_DMA(&huart3, aRXBufferUser, RX_BUFFER_SIZE))
+  if (HAL_OK != HAL_UARTEx_ReceiveToIdle_DMA(huart, aRXBufferUser, UART_DMA_RX_BUFFER_SIZE))
   {
     Error_Handler();
   }
@@ -544,7 +544,7 @@ void UartRxCheck(UART_HandleTypeDef *huart, uint16_t Size)
     {
       /* Current position is lower than previous one : end of buffer has been reached */
       /* First copy data from current position till end of buffer */
-      uwNbReceivedChars = RX_BUFFER_SIZE - old_pos;
+      uwNbReceivedChars = UART_DMA_RX_BUFFER_SIZE - old_pos;
       /* Copy received data in "User" buffer for evacuation */
       for (i = 0; i < uwNbReceivedChars; i++)
       {
@@ -618,7 +618,7 @@ void UartReceptionTask(void *argument)
   /* USER CODE BEGIN 5 */
 
   /* Initiate Continuous reception */
-  StartReception();
+  StartReception(&huart3);
 
   uint16_t uartIncomingSize = 0;
 
