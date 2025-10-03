@@ -28,6 +28,7 @@ extern "C" {
 
 /* Includes ------------------------------------------------------------------*/
 #include "stm32h7xx_hal.h"
+
 #include "stm32h7xx_nucleo.h"
 
 /* Private includes ----------------------------------------------------------*/
@@ -52,7 +53,6 @@ extern "C" {
 
 /* Exported functions prototypes ---------------------------------------------*/
 void Error_Handler(void);
-void MX_USART3_UART_Init(void);
 
 /* USER CODE BEGIN EFP */
 
