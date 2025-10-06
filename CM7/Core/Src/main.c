@@ -43,6 +43,19 @@ static FIL   f_gnss;
 static int   gnss_log_open = 0;
 static int   gnss_flush_cnt = 0;
 
+static struct {
+  char   utc_hms[16];
+  char   date[8];         // ddmmyy
+  double lat, lon;
+  int    have_ll;         // 1 se lat/lon validi
+  int    fix, sats;
+  double hdop, alt_m;
+  double speed_kn, course_deg;
+  int    have_gga;
+  int    have_rmc;
+} g = {0};
+
+//static gnss_state_t g = {0};
 
 static void gnss_log_write_line(const char *line)
 {
@@ -106,8 +119,6 @@ static int rb_pop_byte(uint8_t *b){
 
 // checksum NMEA: XOR tra caratteri tra '$' e '*'
 static int nmea_check_cs(const char *s){
-	printf("nmea_check_cs\r\n");
-		printf("nmea_check_cs s[0] %c\r\n", s[0]);
   if (s[0] != '$') return 0;
   const char *star = NULL;
   uint8_t cs = 0;
@@ -122,7 +133,6 @@ static int nmea_check_cs(const char *s){
 
 // ddmm.mmmm (+ N/S, E/W) -> gradi decimali
 static int nmea_parse_latlon(const char *ddmm, const char hemi, double *deg_out, int is_lat){
-	printf("nmea_parse_latlon\r\n");
   if (!ddmm || !*ddmm) return 0;
   // lat: 2 cifre di gradi; lon: 3 cifre di gradi
   int gdigits = is_lat ? 2 : 3;
@@ -133,8 +143,24 @@ static int nmea_parse_latlon(const char *ddmm, const char hemi, double *deg_out,
   double dec = deg + (min/60.0);
   if (hemi=='S' || hemi=='W') dec = -dec;
   *deg_out = dec;
-  printf("nmea_parse_latlon%f\r\n", dec);
   return 1;
+}
+
+static void to_fixedN(char *dst, size_t n, double v, int dec){
+  long mul = 1;
+  for(int i=0;i<dec;i++) mul *= 10;
+  long sgn = (v < 0) ? -1 : 1;
+  long a = (long) llround(fabs(v) * mul);
+  long intp = a / mul;
+  long frac = a % mul;
+  if (dec == 0) {
+    snprintf(dst, n, "%s%ld", (sgn<0?"-":""), intp);
+  } else {
+    // padding zeri sulla parte frazionaria
+    char fracbuf[16];
+    snprintf(fracbuf, sizeof(fracbuf), "%0*ld", dec, frac);
+    snprintf(dst, n, "%s%ld.%s", (sgn<0?"-":""), intp, fracbuf);
+  }
 }
 
 static void nmea_poll_and_print(void)
@@ -150,39 +176,131 @@ static void nmea_poll_and_print(void)
 
 	      line[L] = 0;
 	      if (L >= 9 && line[0]=='$' && nmea_check_cs(line)) {
-	    	  gnss_log_write_line(line);
-	        if (strstr(line, "GGA,")) {
-	          // $..GGA,hhmmss,lat,N,lon,E,...
-	          char *p = line;
-	          p = strchr(p, ','); if(!p) goto next; p++; // time
-	          p = strchr(p, ','); if(!p) goto next; p++; // lat
-	          char *lat = p;
-	          p = strchr(p, ','); if(!p) goto next; *p++=0; char hemiNS = *p;
-	          p = strchr(p, ','); if(!p) goto next; *p++=0; char *lon = p;
-	          p = strchr(p, ','); if(!p) goto next; *p++=0; char hemiEW = *p;
+//	    	  gnss_log_write_line(line);
+	    	  if (strstr(line, "GGA,")) {
+	    	    char *p = line;
 
-	          double dlat=0, dlon=0;
-	          if (nmea_parse_latlon(lat, hemiNS, &dlat, 1) &&
-	              nmea_parse_latlon(lon, hemiEW, &dlon, 0)) {
-	            printf("GGA: lat=%.6f lon=%.6f\r\n", dlat, dlon);
-	          }
-	        } else if (strstr(line, "RMC,")) {
-	          // $..RMC,hhmmss,A,lat,N,lon,E,...
-	          char *p = line;
-	          p = strchr(p, ','); if(!p) goto next; p++; // time
-	          p = strchr(p, ','); if(!p) goto next; p++; // status
-	          char *lat = p;
-	          p = strchr(p, ','); if(!p) goto next; *p++=0; char hemiNS = *p;
-	          p = strchr(p, ','); if(!p) goto next; *p++=0; char *lon = p;
-	          p = strchr(p, ','); if(!p) goto next; *p++=0; char hemiEW = *p;
+	    	    // hhmmss
+	    	    p = strchr(p, ','); if(!p) goto next; p++;
+	    	    // salva l’ora
+	    	    char *comma = strchr(p, ','); if(!comma) goto next;
+	    	    *comma = 0;
+	    	    strncpy(g.utc_hms, p, sizeof(g.utc_hms)-1);
+	    	    g.utc_hms[sizeof(g.utc_hms)-1]=0;
+	    	    p = comma+1;
 
-	          double dlat=0, dlon=0;
-	          if (nmea_parse_latlon(lat, hemiNS, &dlat, 1) &&
-	              nmea_parse_latlon(lon, hemiEW, &dlon, 0)) {
-	            printf("RMC: lat=%.6f lon=%.6f\r\n", dlat, dlon);
-	          }
-	        }
+	    	    // lat, N/S
+	    	    char *lat = p;
+	    	    p = strchr(p, ','); if(!p) goto next; *p = 0; p++;
+	    	    char hemiNS = *p;
+	    	    p = strchr(p, ','); if(!p) goto next; p++;  // vai oltre N/S
+
+	    	    // lon, E/W
+	    	    char *lon = p;
+	    	    p = strchr(p, ','); if(!p) goto next; *p = 0; p++;
+	    	    char hemiEW = *p;
+	    	    p = strchr(p, ','); if(!p) goto next; p++;  // vai oltre E/W
+
+	    	    // fix
+	    	    g.fix = atoi(p);
+	    	    p = strchr(p, ','); if(!p) goto next; p++;
+
+	    	    // sats
+	    	    g.sats = atoi(p);
+	    	    p = strchr(p, ','); if(!p) goto next; p++;
+
+	    	    // hdop
+	    	    g.hdop = atof(p);
+	    	    p = strchr(p, ','); if(!p) goto next; p++;
+
+	    	    // alt (m)
+	    	    g.alt_m = atof(p);
+
+	    	    // converti lat/lon
+	    	    double dlat=0, dlon=0;
+	    	    if (nmea_parse_latlon(lat, hemiNS, &dlat, 1) &&
+	    	        nmea_parse_latlon(lon, hemiEW, &dlon, 0)) {
+	    	      g.lat = dlat; g.lon = dlon; g.have_ll = 1;
+	    	    }
+	    	    g.have_gga = 1;
+	    	  }
+
+	    	  // --- RMC ---
+	    	  else if (strstr(line, "RMC,")) {
+	    	    char *p = line;
+
+	    	    // hhmmss
+	    	    p = strchr(p, ','); if(!p) goto next; p++;
+	    	    char *comma = strchr(p, ','); if(!comma) goto next;
+	    	    *comma = 0;
+	    	    strncpy(g.utc_hms, p, sizeof(g.utc_hms)-1);
+	    	    g.utc_hms[sizeof(g.utc_hms)-1]=0;
+	    	    p = comma+1;
+
+	    	    // status
+	    	    char status = *p;
+	    	    p = strchr(p, ','); if(!p) goto next; p++;
+
+	    	    // lat, N/S
+	    	    char *lat = p;
+	    	    p = strchr(p, ','); if(!p) goto next; *p = 0; p++;
+	    	    char hemiNS = *p;
+	    	    p = strchr(p, ','); if(!p) goto next; p++;
+
+	    	    // lon, E/W
+	    	    char *lon = p;
+	    	    p = strchr(p, ','); if(!p) goto next; *p = 0; p++;
+	    	    char hemiEW = *p;
+	    	    p = strchr(p, ','); if(!p) goto next; p++;
+
+	    	    // speed (kn)
+	    	    g.speed_kn = atof(p);
+	    	    p = strchr(p, ','); if(!p) goto next; p++;
+
+	    	    // course (deg)
+	    	    g.course_deg = atof(p);
+	    	    p = strchr(p, ','); if(!p) goto next; p++;      // *** AVANZA OLTRE LA COURSE ***
+
+	    	    // date ddmmyy
+	    	    char *date_start = p;
+	    	    comma = strchr(p, ',');
+	    	    if (comma) *comma = 0;
+	    	    strncpy(g.date, date_start, sizeof(g.date)-1);
+	    	    g.date[sizeof(g.date)-1] = 0;
+
+	    	    // aggiorna lat/lon da RMC (opzionale)
+	    	    double dlat=0, dlon=0;
+	    	    if (nmea_parse_latlon(lat, hemiNS, &dlat, 1) &&
+	    	        nmea_parse_latlon(lon, hemiEW, &dlon, 0)) {
+	    	      g.lat = dlat; g.lon = dlon; g.have_ll = 1;
+	    	    }
+
+	    	    g.have_rmc = (status=='A');
+	    	  }
+
+	    	  // --- SCRITTURA CSV: SOLO quando hai GGA+RMC+LL+DATE ---
+	    	  if (gnss_log_open && g.have_gga && g.have_rmc && g.have_ll && g.date[0]) {
+	    	    char slat[24], slon[24], shdop[16], salt[16], sspeed[16], scourse[16];
+	    	    to_fixedN(slat,   sizeof(slat),   g.lat,        6);
+	    	    to_fixedN(slon,   sizeof(slon),   g.lon,        6);
+	    	    to_fixedN(shdop,  sizeof(shdop),  g.hdop,       2);
+	    	    to_fixedN(salt,   sizeof(salt),   g.alt_m,      2);
+	    	    to_fixedN(sspeed, sizeof(sspeed), g.speed_kn,   2);
+	    	    to_fixedN(scourse,sizeof(scourse),g.course_deg, 2);
+
+	    	    f_printf(&f_gnss, "%s,%s,%s,%s,%d,%d,%s,%s,%s,%s\r\n",
+	    	             g.utc_hms, g.date, slat, slon, g.fix, g.sats,
+	    	             shdop, salt, sspeed, scourse);
+
+	    	    if (++gnss_flush_cnt >= 10) { f_sync(&f_gnss); gnss_flush_cnt = 0; }
+
+	    	    // opzionale: azzera i “segnali” per evitare doppie righe sullo stesso ciclo
+	    	    g.have_gga = g.have_rmc = 0;
+	    	  }
+
 	      }
+
+
 	    next:
 	      L = 0;
 	    } else {
@@ -202,12 +320,12 @@ static void nmea_poll_and_print(void)
 uint8_t rx_char;
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
-  if (huart->Instance == USART2) {
-    // stampa il carattere su seriale debug (o bufferizzalo)
-    HAL_UART_Transmit(&huart2, &rx_char, 1, 10);
-    // riavvia ricezione
-    HAL_UART_Receive_IT(&huart2, &rx_char, 1);
-  }
+//  if (huart->Instance == USART2) {
+//    // stampa il carattere su seriale debug (o bufferizzalo)
+//    HAL_UART_Transmit(&huart2, &rx_char, 1, 10);
+//    // riavvia ricezione
+////    HAL_UART_Receive_IT(&huart2, &rx_char, 1);
+//  }
 }
 
 
@@ -466,9 +584,11 @@ static void i2c_scan(void)
 }
 
 static void GNSS_DMA_Start(void) {
-  if (HAL_UARTEx_ReceiveToIdle_DMA(&huart2, nmea_dma_buf, NMEA_DMA_BUF_SZ) != HAL_OK) {
-    printf("USART2 DMA start FAIL\r\n");
-    Error_Handler();
+  HAL_StatusTypeDef s = HAL_UARTEx_ReceiveToIdle_DMA(&huart2, nmea_dma_buf, NMEA_DMA_BUF_SZ);
+  if (s != HAL_OK) {
+    printf("USART2 DMA start FAIL: s=%d RxState=%d gState=%d err=0x%08lX hdmarx=%p\r\n",
+           s, huart2.RxState, huart2.gState, HAL_UART_GetError(&huart2), (void*)huart2.hdmarx);
+    return; // non chiamare Error_Handler qui
   }
   if (huart2.hdmarx) __HAL_DMA_DISABLE_IT(huart2.hdmarx, DMA_IT_HT);
 }
@@ -491,7 +611,7 @@ static void GNSSTask(void *argument)
 	        vTaskDelete(NULL);                       // <— evita ritorno
 	    }
 
-	    fr = f_open(&f_gnss, "0:/nmea.txt", FA_OPEN_APPEND | FA_WRITE);
+	    fr = f_open(&f_gnss, "0:/nmea.txt", FA_WRITE | FA_CREATE_ALWAYS);
 	    printf("GNSS f_open -> %d\r\n", fr);
 	    if (fr != FR_OK) {
 	        printf("GNSS: open fallita (err=%d). Unmount e stop.\r\n", fr);
@@ -501,30 +621,51 @@ static void GNSSTask(void *argument)
 
 	    gnss_log_open = 1;
 	    if (f_size(&f_gnss) == 0) {
-	        f_printf(&f_gnss, "# NMEA log\r\n");
+	        f_printf(&f_gnss, "utc_hms,date,lat,lon,fix,sats,hdop,alt_m,speed_kn,course_deg\r\n");
 	        f_sync(&f_gnss);
 	    }
+//	    HAL_Delay(100);
+//	    printf("GNSS task started (USART2)\r\n");
+//	    GNSS_DMA_Start();
 
-	    printf("GNSS task started (USART2)\r\n");
-	    GNSS_DMA_Start();
-
-	    uint32_t t0 = HAL_GetTick();
+//	    uint32_t t0 = HAL_GetTick();
+	    uint32_t t0 = 0;
 	    for (;;) {
-	        if (HAL_GetTick() - t0 >= 1000) {
-	            t0 += 1000;
-	            uint32_t age = HAL_GetTick() - gnss_last_rx_ms;
-	            uint32_t ev  = dbg_rx_events;
-	            uint16_t sz  = dbg_last_size;
-	            printf("[GNSS] bytes=%lu last=%lums events=%lu lastSz=%u\r\n",
-	                   gnss_rx_bytes, age, ev, sz);
-	            if (age > 3000) {
-	                printf("[GNSS] nessun dato recente -> restart DMA\r\n");
-	                GNSS_DMA_Start();
-	            }
-	        }
-	        nmea_poll_and_print();
-	        osDelay(10);
-	    }
+	    	if (BspButtonState == BUTTON_PRESSED) {
+
+	    		osDelay(30); // debounce
+	    						// aspetta rilascio: torna HIGH
+	    						while (BSP_PB_GetState(BUTTON_USER) == GPIO_PIN_RESET) {
+	    							osDelay(5);
+	    						}
+	    						BspButtonState = BUTTON_RELEASED;
+
+	    						printf("Stop richiesto: sync/close/unmount...\r\n");
+	    						f_sync(&f_gnss);
+	    						f_close(&f_gnss);
+	    						f_mount(NULL, USERPath, 1);
+	    						BSP_LED_Off(LED_GREEN);
+	    						printf("Registrazione fermata e file chiuso.\r\n");
+	    						vTaskDelete(NULL);
+
+	    	}
+	    	if (HAL_GetTick() - t0 >= 1000) {
+					t0 += 1000;
+					uint32_t age = HAL_GetTick() - gnss_last_rx_ms;
+					uint32_t ev  = dbg_rx_events;
+					uint16_t sz  = dbg_last_size;
+	//	            printf("[GNSS] bytes=%lu last=%lums events=%lu lastSz=%u\r\n",
+	//	                   gnss_rx_bytes, age, ev, sz);
+					if (age > 3000) {
+	//	                printf("[GNSS] nessun dato recente -> restart DMA\r\n");
+						GNSS_DMA_Start();
+					}
+				}
+	//	        printf("before nmea_poll_and_print\r\n");
+				nmea_poll_and_print();
+	//	        printf("after nmea_poll_and_print\r\n");
+				osDelay(10);
+			}
 
 	    // (in pratica non ci arrivi mai; ma per sicurezza)
 	    if (gnss_log_open) {
@@ -754,6 +895,7 @@ int main(void)
   MX_FATFS_Init();
   MX_I2C1_Init();
   HAL_Delay(100);
+  set_usart2_baud(38400);
 //  HAL_Delay(100);
 //  i2c_scan(); // deve stampare 0x6B
 //
@@ -836,20 +978,20 @@ int main(void)
   /* Initialize USER push-button, will be used to trigger an interrupt each time it's pressed.*/
   BSP_PB_Init(BUTTON_USER, BUTTON_MODE_EXTI);
 
-  const osThreadAttr_t IMUTask_attributes = {
-    .name = "IMUTask",
-    .stack_size = 512 * 4,
-    .priority = (osPriority_t) osPriorityNormal,
-  };
-  osThreadNew(IMUTask, NULL, &IMUTask_attributes);
+//  const osThreadAttr_t IMUTask_attributes = {
+//    .name = "IMUTask",
+//    .stack_size = 512 * 4,
+//    .priority = (osPriority_t) osPriorityNormal,
+//  };
+//  osThreadNew(IMUTask, NULL, &IMUTask_attributes);
 
   // Task GNSS
-//  const osThreadAttr_t GNSSTask_attributes = {
-//    .name = "GNSSTask",
-//    .stack_size = 2048 * 4,           // un po’ più stack per parsing
-//    .priority = (osPriority_t) osPriorityBelowNormal, // o Normal
-//  };
-//  osThreadNew(GNSSTask, NULL, &GNSSTask_attributes);
+  const osThreadAttr_t GNSSTask_attributes = {
+    .name = "GNSSTask",
+    .stack_size = 2048 * 4,           // un po’ più stack per parsing
+    .priority = (osPriority_t) osPriorityBelowNormal, // o Normal
+  };
+  osThreadNew(GNSSTask, NULL, &GNSSTask_attributes);
 
   /* USER CODE BEGIN BSP */
   /* -- Sample board code to switch on leds ---- */
@@ -901,7 +1043,7 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
 	      dbg_rx_events++;
 	    }
 	    // riarmo
-	    GNSS_DMA_Start();
+//	    GNSS_DMA_Start();
 	  }
 }
 /**
