@@ -25,7 +25,6 @@
 #include "spi.h"
 #include "usart.h"
 #include "gpio.h"
-#include "sd_spi.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -34,6 +33,30 @@
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
+
+static volatile uint32_t dbg_rx_events = 0;
+static volatile uint16_t dbg_last_size = 0;
+static uint8_t          dbg_last_bytes[64];
+
+static FATFS fs_gnss;
+static FIL   f_gnss;
+static int   gnss_log_open = 0;
+static int   gnss_flush_cnt = 0;
+
+
+static void gnss_log_write_line(const char *line)
+{
+  if (!gnss_log_open) return;
+
+  /* scrivo la riga così com’è; se non finisce con CR/LF la aggiungo */
+  UINT bw = 0;
+  f_printf(&f_gnss, "%s\r\n", line);
+  gnss_flush_cnt++;
+  if (gnss_flush_cnt >= 10) {
+    f_sync(&f_gnss);
+    gnss_flush_cnt = 0;
+  }
+}
 
 typedef struct tagButtonMessage
 {
@@ -44,201 +67,150 @@ typedef struct tagButtonMessage
 extern UART_HandleTypeDef huart3;
 extern char USERPath[4];
 
-static int g_is_sdhc = 0;
+#define GNSS_RX_BUF_SIZE 256
+static uint8_t gnss_rx_buf[GNSS_RX_BUF_SIZE];   // buffer DMA
+static uint8_t gnss_line[GNSS_RX_BUF_SIZE];
+static volatile uint32_t gnss_rx_bytes = 0;
+static volatile uint32_t gnss_last_rx_ms = 0;
+
+static void GNSS_StartReception(void);
+
+#define NMEA_DMA_BUF_SZ   256
+#define NMEA_RING_SZ      1024
+
+static uint8_t  nmea_dma_buf[NMEA_DMA_BUF_SZ];
+static uint8_t  nmea_ring[NMEA_RING_SZ];
+static volatile uint16_t rb_head = 0, rb_tail = 0;
+
+static void set_usart2_baud(uint32_t baud){
+  huart2.Init.BaudRate = baud;
+  HAL_UART_DeInit(&huart2);
+  if (HAL_UART_Init(&huart2) != HAL_OK) { Error_Handler(); }
+}
+
+// push bytes in ring
+static void rb_push(const uint8_t *data, uint16_t len){
+  for(uint16_t i=0;i<len;i++){
+    uint16_t next = (rb_head + 1) % NMEA_RING_SZ;
+    if (next == rb_tail) { /* overflow -> drop oldest */ rb_tail = (rb_tail + 1) % NMEA_RING_SZ; }
+    nmea_ring[rb_head] = data[i];
+    rb_head = next;
+  }
+}
+static int rb_pop_byte(uint8_t *b){
+  if (rb_head == rb_tail) return 0;
+  *b = nmea_ring[rb_tail];
+  rb_tail = (rb_tail + 1) % NMEA_RING_SZ;
+  return 1;
+}
+
+// checksum NMEA: XOR tra caratteri tra '$' e '*'
+static int nmea_check_cs(const char *s){
+	printf("nmea_check_cs\r\n");
+		printf("nmea_check_cs s[0] %c\r\n", s[0]);
+  if (s[0] != '$') return 0;
+  const char *star = NULL;
+  uint8_t cs = 0;
+  for (const char *p = s+1; *p; ++p){
+    if (*p == '*'){ star = p; break; }
+    cs ^= (uint8_t)(*p);
+  }
+  if (!star || !star[1] || !star[2]) return 0;
+  uint8_t want = (uint8_t)strtoul(star+1, NULL, 16);
+  return cs == want;
+}
+
+// ddmm.mmmm (+ N/S, E/W) -> gradi decimali
+static int nmea_parse_latlon(const char *ddmm, const char hemi, double *deg_out, int is_lat){
+	printf("nmea_parse_latlon\r\n");
+  if (!ddmm || !*ddmm) return 0;
+  // lat: 2 cifre di gradi; lon: 3 cifre di gradi
+  int gdigits = is_lat ? 2 : 3;
+  char gbuf[4] = {0};
+  for(int i=0;i<gdigits;i++){ if (ddmm[i]<'0'||ddmm[i]>'9') return 0; gbuf[i]=ddmm[i]; }
+  int deg = atoi(gbuf);
+  double min = atof(ddmm + gdigits);
+  double dec = deg + (min/60.0);
+  if (hemi=='S' || hemi=='W') dec = -dec;
+  *deg_out = dec;
+  printf("nmea_parse_latlon%f\r\n", dec);
+  return 1;
+}
+
+static void nmea_poll_and_print(void)
+{
+
+	 static char line[128];
+	  static uint16_t L = 0;
+	  uint8_t b;
+
+	  while (rb_pop_byte(&b)) {
+	    if (b == '\r') continue;
+	    if (b == '\n') {
+
+	      line[L] = 0;
+	      if (L >= 9 && line[0]=='$' && nmea_check_cs(line)) {
+	    	  gnss_log_write_line(line);
+	        if (strstr(line, "GGA,")) {
+	          // $..GGA,hhmmss,lat,N,lon,E,...
+	          char *p = line;
+	          p = strchr(p, ','); if(!p) goto next; p++; // time
+	          p = strchr(p, ','); if(!p) goto next; p++; // lat
+	          char *lat = p;
+	          p = strchr(p, ','); if(!p) goto next; *p++=0; char hemiNS = *p;
+	          p = strchr(p, ','); if(!p) goto next; *p++=0; char *lon = p;
+	          p = strchr(p, ','); if(!p) goto next; *p++=0; char hemiEW = *p;
+
+	          double dlat=0, dlon=0;
+	          if (nmea_parse_latlon(lat, hemiNS, &dlat, 1) &&
+	              nmea_parse_latlon(lon, hemiEW, &dlon, 0)) {
+	            printf("GGA: lat=%.6f lon=%.6f\r\n", dlat, dlon);
+	          }
+	        } else if (strstr(line, "RMC,")) {
+	          // $..RMC,hhmmss,A,lat,N,lon,E,...
+	          char *p = line;
+	          p = strchr(p, ','); if(!p) goto next; p++; // time
+	          p = strchr(p, ','); if(!p) goto next; p++; // status
+	          char *lat = p;
+	          p = strchr(p, ','); if(!p) goto next; *p++=0; char hemiNS = *p;
+	          p = strchr(p, ','); if(!p) goto next; *p++=0; char *lon = p;
+	          p = strchr(p, ','); if(!p) goto next; *p++=0; char hemiEW = *p;
+
+	          double dlat=0, dlon=0;
+	          if (nmea_parse_latlon(lat, hemiNS, &dlat, 1) &&
+	              nmea_parse_latlon(lon, hemiEW, &dlon, 0)) {
+	            printf("RMC: lat=%.6f lon=%.6f\r\n", dlat, dlon);
+	          }
+	        }
+	      }
+	    next:
+	      L = 0;
+	    } else {
+	      if (L < sizeof(line)-1) line[L++] = (char)b;
+	      else L = 0; // overflow -> reset riga
+	    }
+	  }
+
+}
+
+
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 
-// Chip Select PA4 helper
-//static inline void SD_CS_L(void){ HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4, GPIO_PIN_RESET); }
-//static inline void SD_CS_H(void){ HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4, GPIO_PIN_SET); }
+uint8_t rx_char;
 
-// SPI byte xfer
-//static uint8_t spi_txrx(uint8_t b){
-//  uint8_t rx=0xFF;
-//  HAL_SPI_TransmitReceive(&hspi1, &b, &rx, 1, 100);
-//  return rx;
-//}
-
-//static uint8_t sd_cmd_raw(uint8_t cmd, uint32_t arg, uint8_t crc, uint8_t *r1)
-//{
-//  uint8_t resp = 0xFF;
-//
-//  SD_CS_L();
-//  spi_txrx(0xFF);                 // 1 gap byte
-//
-//  spi_txrx(0x40 | cmd);
-//  spi_txrx((arg >> 24) & 0xFF);
-//  spi_txrx((arg >> 16) & 0xFF);
-//  spi_txrx((arg >> 8)  & 0xFF);
-//  spi_txrx(arg & 0xFF);
-//  spi_txrx(crc);
-//
-//  // leggi R1 (max ~8 try)
-//  for (int i=0; i<64; i++) {
-//    resp = spi_txrx(0xFF);
-//    if ((resp & 0x80) == 0) break;
-//  }
-//
-//  *r1 = resp;
-//  return resp;
-//}
-
-//static uint8_t sd_cmd(uint8_t cmd, uint32_t arg, uint8_t crc, uint8_t *r1)
-//{
-//  uint8_t resp = sd_cmd_raw(cmd, arg, crc, r1);
-//  SD_CS_H();
-//  spi_txrx(0xFF);                 // post clock
-//  return resp;
-//}
-//
-//static int sd_acmd41(uint32_t hcs)  // hcs=1 per SDHC/SDXC
-//{
-//  uint8_t r1;
-//  // CMD55
-//  sd_cmd(55, 0, 0x65, &r1);
-//  // ACMD41 con HCS nel bit 30
-//  return sd_cmd(41, hcs ? 0x40000000 : 0x00000000, 0x77, &r1), r1;
-//}
-
-//// Inizializzazione completa in SPI mode
-// int sd_init(void)
-//{
-//  // 80+ clocks a CS alto
-//  sd_idle_clocks(20);
-//
-//  uint8_t r1;
-//  // CMD0: IDLE (0x01) atteso, ma 0x00 = già pronto -> OK
-//  sd_cmd(0, 0x00000000, 0x95, &r1);
-//  printf("CMD0 R1=0x%02X\r\n", r1);
-//
-//  // CMD8: tensione / check SDHC (pattern 0x1AA)
-//  sd_cmd_raw(8, 0x000001AA, 0x87, &r1);
-//  // leggi resto R7 (4 byte) mentre CS è LOW
-//  uint8_t r7[4] = { spi_txrx(0xFF), spi_txrx(0xFF), spi_txrx(0xFF), spi_txrx(0xFF) };
-//  SD_CS_H(); spi_txrx(0xFF);
-//  printf("CMD8 R1=0x%02X, R7=%02X %02X %02X %02X\r\n", r1, r7[0],r7[1],r7[2],r7[3]);
-//
-//  // ACMD41 loop finché R1 = 0x00 (esce dallo stato idle)
-//  for (int i=0; i<2000; i++) {             // ~1s
-//    r1 = sd_acmd41(1);
-//    if (r1 == 0x00) break;
-//    HAL_Delay(1);
-//  }
-//  printf("ACMD41 R1=0x%02X\r\n", r1);
-//  if (r1 != 0x00) return -1;
-//
-//  // CMD58: OCR (per verificare CCS)
-//  sd_cmd_raw(58, 0, 0xFD, &r1);
-//  uint8_t ocr[4] = { spi_txrx(0xFF), spi_txrx(0xFF), spi_txrx(0xFF), spi_txrx(0xFF) };
-//  SD_CS_H(); spi_txrx(0xFF);
-//  printf("CMD58 R1=0x%02X, OCR=%02X %02X %02X %02X\r\n", r1, ocr[0],ocr[1],ocr[2],ocr[3]);
-//
-//  g_is_sdhc = (ocr[0] & 0x40) ? 1 : 0;   // bit CCS
-//
-//  // (solo SDSC) CMD16 per block size 512
-//  if (!g_is_sdhc) {
-//    sd_cmd(16, 512, 0x15, &r1);
-//    printf("CMD16 R1=0x%02X\r\n", r1);
-//    if (r1 != 0x00) return -2;
-//  }
-//
-//  return 0;
-//}
-
-//// Lettura di un blocco (LBA) in 512B buffer
-// int sd_read_block(uint32_t lba, uint8_t *buf)
-//{
-//	uint8_t r1;
-//
-//	  // Argomento: SDHC/SDXC = block addressing; SDSC = byte addressing
-//	  uint32_t arg = g_is_sdhc ? lba : (lba * 512u);
-//
-//	  SD_CS_L();
-//	  spi_txrx(0xFF);                         // gap
-//
-//	  sd_cmd_raw(17, arg, 0xFF, &r1);         // CMD17
-//	  if (r1 != 0x00) {
-//	    SD_CS_H(); spi_txrx(0xFF);
-//	    printf("CMD17 R1=0x%02X\r\n", r1);
-//	    return -1;
-//	  }
-//
-//	  // Attesa token 0xFE (può richiedere molti byte; aumentiamo la finestra)
-//	  uint8_t tok = 0xFF;
-//	  int wait = 800000;                      // ~ampio timeout a byte dummy
-//	  while (wait-- > 0) {
-//	    tok = spi_txrx(0xFF);
-//	    if (tok == 0xFE) break;               // token dati
-//	  }
-//	  if (tok != 0xFE) {
-//	    SD_CS_H(); spi_txrx(0xFF);
-//	    printf("No data token, tok=0x%02X\r\n", tok);
-//	    return -2;
-//	  }
-//
-//	  // Leggi 512B
-//	  for (int i=0; i<512; i++) buf[i] = spi_txrx(0xFF);
-//
-//	  // CRC (2B) ignorato
-//	  spi_txrx(0xFF); spi_txrx(0xFF);
-//
-//	  SD_CS_H(); spi_txrx(0xFF);              // post-clock
-//	  return 0;
-//}
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
+  if (huart->Instance == USART2) {
+    // stampa il carattere su seriale debug (o bufferizzalo)
+    HAL_UART_Transmit(&huart2, &rx_char, 1, 10);
+    // riavvia ricezione
+    HAL_UART_Receive_IT(&huart2, &rx_char, 1);
+  }
+}
 
 
-
-// Clocks “dummy” a CS alto
-// void sd_idle_clocks(uint32_t nbytes){
-//  SD_CS_H();
-//  for(uint32_t i=0;i<nbytes;i++) spi_txrx(0xFF);
-//}
-
-// Manda un comando SD (CMDx) e legge R1
-// static uint8_t sd_cmd(uint8_t cmd, uint32_t arg, uint8_t crc){
-//  uint8_t r1 = 0xFF;
-//
-//  SD_CS_L();
-//  // 1 byte “gap”
-//  spi_txrx(0xFF);
-//
-//  // pacchetto comando (6 byte)
-//  spi_txrx(0x40 | cmd);
-//  spi_txrx((arg >> 24) & 0xFF);
-//  spi_txrx((arg >> 16) & 0xFF);
-//  spi_txrx((arg >> 8) & 0xFF);
-//  spi_txrx(arg & 0xFF);
-//  spi_txrx(crc);
-//
-//  // leggi R1 (fino a 8 tentativi)
-//  for(int i=0;i<8;i++){
-//    r1 = spi_txrx(0xFF);
-//    if ((r1 & 0x80) == 0) break;
-//  }
-//
-//  SD_CS_H();
-//  spi_txrx(0xFF); // post-clock
-//  return r1;
-//}
-
-//void sd_quick_test(void){
-//  // 80 clock a CS alto (richiesto dallo standard)
-//  sd_idle_clocks(10);
-//
-//  // CMD0 (GO_IDLE_STATE), arg=0, CRC valido 0x95
-//  uint8_t r1 = sd_cmd(0, 0x00000000, 0x95);
-//  if (r1 == 0x01){
-//    printf("SD CMD0 OK, R1=0x%02X (IDLE)\r\n", r1);
-//  }else{
-//    printf("SD CMD0 FAIL, R1=0x%02X\r\n", r1);
-//  }
-//
-//  // (Opz.) CMD8 per voltaggio/SDHC check: CRC 0x87 con arg 0x1AA
-//  // uint8_t r1_8 = sd_cmd(8, 0x000001AA, 0x87);
-//  // printf("SD CMD8 R1=0x%02X\r\n", r1_8);
-//}
 
 #ifndef HSEM_ID_0
 #define HSEM_ID_0 (0U) /* HW semaphore 0*/
@@ -308,21 +280,21 @@ void UartRxCheck(UART_HandleTypeDef *huart, uint16_t Size);
 #define CTRL3_C            0x12
 #define OUTX_L_A           0x28          // accel start (auto-increment ON)
 
-#define LSM6DSOX_ADDR       (0x6B << 1)     // 8-bit per HAL
-#define LSM6DSOX_WHOAMI     0x0F
-#define LSM6DSOX_CTRL1_XL   0x10
-#define LSM6DSOX_CTRL2_G    0x11
-#define LSM6DSOX_CTRL3_C    0x12
-#define LSM6DSOX_OUTX_L_A   0x28   // accel data start (auto-increment ON)
+//#define LSM6DSOX_ADDR       (0x6B << 1)     // 8-bit per HAL
+//#define LSM6DSOX_WHOAMI     0x0F
+//#define LSM6DSOX_CTRL1_XL   0x10
+//#define LSM6DSOX_CTRL2_G    0x11
+//#define LSM6DSOX_CTRL3_C    0x12
+//#define LSM6DSOX_OUTX_L_A   0x28   // accel data start (auto-increment ON)
 
-void BSP_PB_Callback(Button_TypeDef Button)
-{
-
-  if (Button == BUTTON_USER)
-  {
-    BspButtonState = BUTTON_PRESSED;
-  }
-}
+//void BSP_PB_Callback(Button_TypeDef Button)
+//{
+//
+//  if (Button == BUTTON_USER)
+//  {
+//    BspButtonState = BUTTON_PRESSED;
+//  }
+//}
 
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
@@ -350,12 +322,12 @@ static int imu_pick_addr(void) {
   return -1;
 }
 
-static int pick_addr(void){
-  if (HAL_I2C_IsDeviceReady(&hi2c1, (0x6A<<1), 2, 50) == HAL_OK) { lsm_addr=(0x6A<<1); return 0; }
-  if (HAL_I2C_IsDeviceReady(&hi2c1, (0x6B<<1), 2, 50) == HAL_OK) { lsm_addr=(0x6B<<1); return 0; }
-  return -1;
-}
-#define LSM6DSOX_ADDR lsm_addr
+//static int pick_addr(void){
+//  if (HAL_I2C_IsDeviceReady(&hi2c1, (0x6A<<1), 2, 50) == HAL_OK) { lsm_addr=(0x6A<<1); return 0; }
+//  if (HAL_I2C_IsDeviceReady(&hi2c1, (0x6B<<1), 2, 50) == HAL_OK) { lsm_addr=(0x6B<<1); return 0; }
+//  return -1;
+//}
+//#define LSM6DSOX_ADDR lsm_addr
 
 static HAL_StatusTypeDef imu_read_u8(uint8_t reg, uint8_t *val) {
   return HAL_I2C_Mem_Read(&hi2c1, imu_addr, reg, I2C_MEMADD_SIZE_8BIT, val, 1, 100);
@@ -442,46 +414,46 @@ static HAL_StatusTypeDef ism330_read_accel_ms2(float *ax, float *ay, float *az) 
 }
 
 
-static HAL_StatusTypeDef lsm6dsox_read_accel_ms2(float *ax, float *ay, float *az)
-{
-    uint8_t raw[6];
-    HAL_StatusTypeDef st = HAL_I2C_Mem_Read(&hi2c1, LSM6DSOX_ADDR,
-                                            LSM6DSOX_OUTX_L_A, I2C_MEMADD_SIZE_8BIT,
-                                            raw, 6, 100);
-    if (st != HAL_OK) return st;
-
-    int16_t x = (int16_t)((raw[1] << 8) | raw[0]);
-    int16_t y = (int16_t)((raw[3] << 8) | raw[2]);
-    int16_t z = (int16_t)((raw[5] << 8) | raw[4]);
-
-    // Sensibilità a ±2g: 0.061 mg/LSB
-    const float SENS_MG_PER_LSB = 0.061f;
-    const float MG_TO_MS2 = 9.80665e-3f;
-
-    *ax = x * SENS_MG_PER_LSB * MG_TO_MS2;
-    *ay = y * SENS_MG_PER_LSB * MG_TO_MS2;
-    *az = z * SENS_MG_PER_LSB * MG_TO_MS2;
-    return HAL_OK;
-}
-
-// Legge accelerometro in mg (±2g, sens=0.061 mg/LSB a 16-bit)
-static HAL_StatusTypeDef lsm6dsox_read_accel(float *ax_mg, float *ay_mg, float *az_mg) {
-  uint8_t raw[6];
-  HAL_StatusTypeDef st = HAL_I2C_Mem_Read(&hi2c1, LSM6DSOX_ADDR,
-                                          LSM6DSOX_OUTX_L_A, I2C_MEMADD_SIZE_8BIT,
-                                          raw, 6, 100);
-  if (st != HAL_OK) return st;
-
-  int16_t x = (int16_t)((raw[1] << 8) | raw[0]);
-  int16_t y = (int16_t)((raw[3] << 8) | raw[2]);
-  int16_t z = (int16_t)((raw[5] << 8) | raw[4]);
-
-  const float sens = 0.061f;  // mg/LSB @±2g
-  *ax_mg = x * sens;
-  *ay_mg = y * sens;
-  *az_mg = z * sens;
-  return HAL_OK;
-}
+//static HAL_StatusTypeDef lsm6dsox_read_accel_ms2(float *ax, float *ay, float *az)
+//{
+//    uint8_t raw[6];
+//    HAL_StatusTypeDef st = HAL_I2C_Mem_Read(&hi2c1, LSM6DSOX_ADDR,
+//                                            LSM6DSOX_OUTX_L_A, I2C_MEMADD_SIZE_8BIT,
+//                                            raw, 6, 100);
+//    if (st != HAL_OK) return st;
+//
+//    int16_t x = (int16_t)((raw[1] << 8) | raw[0]);
+//    int16_t y = (int16_t)((raw[3] << 8) | raw[2]);
+//    int16_t z = (int16_t)((raw[5] << 8) | raw[4]);
+//
+//    // Sensibilità a ±2g: 0.061 mg/LSB
+//    const float SENS_MG_PER_LSB = 0.061f;
+//    const float MG_TO_MS2 = 9.80665e-3f;
+//
+//    *ax = x * SENS_MG_PER_LSB * MG_TO_MS2;
+//    *ay = y * SENS_MG_PER_LSB * MG_TO_MS2;
+//    *az = z * SENS_MG_PER_LSB * MG_TO_MS2;
+//    return HAL_OK;
+//}
+//
+//// Legge accelerometro in mg (±2g, sens=0.061 mg/LSB a 16-bit)
+//static HAL_StatusTypeDef lsm6dsox_read_accel(float *ax_mg, float *ay_mg, float *az_mg) {
+//  uint8_t raw[6];
+//  HAL_StatusTypeDef st = HAL_I2C_Mem_Read(&hi2c1, LSM6DSOX_ADDR,
+//                                          LSM6DSOX_OUTX_L_A, I2C_MEMADD_SIZE_8BIT,
+//                                          raw, 6, 100);
+//  if (st != HAL_OK) return st;
+//
+//  int16_t x = (int16_t)((raw[1] << 8) | raw[0]);
+//  int16_t y = (int16_t)((raw[3] << 8) | raw[2]);
+//  int16_t z = (int16_t)((raw[5] << 8) | raw[4]);
+//
+//  const float sens = 0.061f;  // mg/LSB @±2g
+//  *ax_mg = x * sens;
+//  *ay_mg = y * sens;
+//  *az_mg = z * sens;
+//  return HAL_OK;
+//}
 
 static void i2c_scan(void)
 {
@@ -493,41 +465,84 @@ static void i2c_scan(void)
   }
 }
 
-//static void IMUTask(void *argument)
-//{
-//
-//	if (imu_pick_addr()!=0) printf("IMU non trovata\r\n");
-//
-//	printf("Init ISM330...\r\n");
-//	if (ism330_init() != HAL_OK) {
-//	  printf("ISM330 init ERROR\r\n");
-//	   Error_Handler() ;
-//	}
-//
-////  // Inizializza IMU una sola volta
-////  printf("Init LSM6DSOX...\r\n");
-////  if (lsm6dsox_init() != HAL_OK) {
-////    printf("LSM6DSOX init ERROR\r\n");
-////    Error_Handler();
-////  }
-//  printf("LSM6DSOX OK\r\n");
-////
-//  for (;;) {
-//    float ax, ay, az;
-//    if (ism330_read_accel_ms2(&ax, &ay, &az) == HAL_OK) {
-//    	printf("AX=%.2f ms2  AY=%.2f ms2  AZ=%.2f ms2\r\n", ax, ay, az);
-//      // Se non hai il printf float attivo, stampa in mg come interi:
-////      int ax_i = (int)(ax + (ax>=0?0.5f:-0.5f));
-////      int ay_i = (int)(ay + (ay>=0?0.5f:-0.5f));
-////      int az_i = (int)(az + (az>=0?0.5f:-0.5f));
-////      printf("AX=%d mg  AY=%d mg  AZ=%d mg\r\n", ax_i, ay_i, az_i);
-//      // Se hai abilitato il float: printf("AX=%.2f mg AY=%.2f mg AZ=%.2f mg\r\n", ax, ay, az);
-//    } else {
-//      printf("Read accel ERROR\r\n");
-//    }
-//    osDelay(100); // 10 Hz
-//  }
-//}
+static void GNSS_DMA_Start(void) {
+  if (HAL_UARTEx_ReceiveToIdle_DMA(&huart2, nmea_dma_buf, NMEA_DMA_BUF_SZ) != HAL_OK) {
+    printf("USART2 DMA start FAIL\r\n");
+    Error_Handler();
+  }
+  if (huart2.hdmarx) __HAL_DMA_DISABLE_IT(huart2.hdmarx, DMA_IT_HT);
+}
+
+static void hexdump(const uint8_t *p, uint16_t n) {
+  for (uint16_t i=0;i<n;i++) {
+    printf("%02X ", p[i]);
+    if ((i & 0x0F) == 0x0F) printf("\r\n");
+  }
+  if ((n & 0x0F) != 0) printf("\r\n");
+}
+
+static void GNSSTask(void *argument)
+{
+
+	 FRESULT fr = f_mount(&fs_gnss, USERPath, 1);
+	    printf("GNSS f_mount -> %d\r\n", fr);
+	    if (fr != FR_OK) {
+	        printf("GNSS: SD non pronta (err=%d). Stop task.\r\n", fr);
+	        vTaskDelete(NULL);                       // <— evita ritorno
+	    }
+
+	    fr = f_open(&f_gnss, "0:/nmea.txt", FA_OPEN_APPEND | FA_WRITE);
+	    printf("GNSS f_open -> %d\r\n", fr);
+	    if (fr != FR_OK) {
+	        printf("GNSS: open fallita (err=%d). Unmount e stop.\r\n", fr);
+	        f_mount(NULL, USERPath, 1);
+	        vTaskDelete(NULL);                       // <— evita ritorno
+	    }
+
+	    gnss_log_open = 1;
+	    if (f_size(&f_gnss) == 0) {
+	        f_printf(&f_gnss, "# NMEA log\r\n");
+	        f_sync(&f_gnss);
+	    }
+
+	    printf("GNSS task started (USART2)\r\n");
+	    GNSS_DMA_Start();
+
+	    uint32_t t0 = HAL_GetTick();
+	    for (;;) {
+	        if (HAL_GetTick() - t0 >= 1000) {
+	            t0 += 1000;
+	            uint32_t age = HAL_GetTick() - gnss_last_rx_ms;
+	            uint32_t ev  = dbg_rx_events;
+	            uint16_t sz  = dbg_last_size;
+	            printf("[GNSS] bytes=%lu last=%lums events=%lu lastSz=%u\r\n",
+	                   gnss_rx_bytes, age, ev, sz);
+	            if (age > 3000) {
+	                printf("[GNSS] nessun dato recente -> restart DMA\r\n");
+	                GNSS_DMA_Start();
+	            }
+	        }
+	        nmea_poll_and_print();
+	        osDelay(10);
+	    }
+
+	    // (in pratica non ci arrivi mai; ma per sicurezza)
+	    if (gnss_log_open) {
+	        f_sync(&f_gnss);
+	        f_close(&f_gnss);
+	        f_mount(NULL, USERPath, 1);
+	        gnss_log_open = 0;
+	    }
+	    vTaskDelete(NULL);
+}
+
+
+
+static void i2c_dbg(const char* tag, HAL_StatusTypeDef st){
+  uint32_t e = HAL_I2C_GetError(&hi2c1);
+  printf("%s: st=%d err=0x%08lX\r\n", tag, (int)st, (unsigned long)e);
+}
+
 
 static int to_fixed3(char *dst, size_t dstsz, float v) {
     int32_t m = (int32_t)(v * 1000.0f + (v >= 0 ? 0.5f : -0.5f));
@@ -535,8 +550,15 @@ static int to_fixed3(char *dst, size_t dstsz, float v) {
     return snprintf(dst, dstsz, "%ld.%03ld", (long)(m/1000), (long)(m%1000));
 }
 
+
+
+
 static void IMUTask(void *argument)
 {
+//	  HAL_StatusTypeDef st = imu_write_u8(CTRL3_C, 0x01);
+//	  i2c_dbg("imu_reset", st);
+//	 HAL_Delay(100);                  // IMU power-up settle
+//	    i2c_scan();
 	if (imu_pick_addr()!=0) {
 	        printf("IMU non trovata\r\n");
 	    }
@@ -723,99 +745,88 @@ int main(void)
   MX_GPIO_Init();
   MX_DMA_Init();
   MX_USART3_UART_Init();
-  MX_I2C1_Init();
-  MX_SPI1_Init();
 
+
+  MX_USART2_UART_Init();
 
   printf("start FATFS_Init ....\r\n");
+  MX_SPI1_Init();
   MX_FATFS_Init();
+  MX_I2C1_Init();
+  HAL_Delay(100);
+//  HAL_Delay(100);
+//  i2c_scan(); // deve stampare 0x6B
+//
+//  uint8_t who = 0;
+//  HAL_StatusTypeDef st;
+//
+//  HAL_I2C_DeInit(&hi2c1);
+//  hi2c1.Init.Timing = 100;
+//  HAL_I2C_Init(&hi2c1);
+//  HAL_I2CEx_ConfigAnalogFilter(&hi2c1, I2C_ANALOGFILTER_ENABLE);
+//  HAL_I2CEx_ConfigDigitalFilter(&hi2c1, 0);
+//  st = HAL_I2C_Mem_Read(&hi2c1, 0x6B<<1, 0x0F,
+//                        I2C_MEMADD_SIZE_8BIT,  // <-- IMPORTANTISSIMO!
+//                        &who, 1, 100);
+//  printf("WHO @0x6B: st=%d err=0x%08lX who=0x%02X\r\n",
+//         st, (unsigned long)HAL_I2C_GetError(&hi2c1), who);
+//
+//  st = HAL_I2C_Mem_Read(&hi2c1, 0x7E<<1, 0x0F,
+//                        I2C_MEMADD_SIZE_8BIT,
+//                        &who, 1, 100);
+//  printf("WHO @0x6A: st=%d err=0x%08lX who=0x%02X\r\n",
+//         st, (unsigned long)HAL_I2C_GetError(&hi2c1), who);
 
-  FATFS fs;
-  FRESULT fr;
+//  MX_I2C1_Init();
+//  HAL_Delay(100);
+//  i2c_scan();
+////
+//  uint8_t who=0;
+//  HAL_StatusTypeDef st;
+//  st = HAL_I2C_Mem_Read(&hi2c1, 0x6B<<1, WHO_AM_I_REG, I2C_MEMADD_SIZE_8BIT, &who, 1, 100);
+//  i2c_dbg("WHO 0x6B", st);
+//  printf("WHO=0x%02X\r\n", who);
+//  while(1);
 
-  /* 1) Monta */
-//  printf("Mount %s ...\r\n", USERPath);   // di solito "0:"
-//  fr = f_mount(&fs, USERPath, 1);
-//  printf("f_mount -> %d (%s)\r\n", fr, fr_str(fr));
+
+
+//  HAL_Delay(100);
 //
-//  /* 2) Se non c'è filesystem, crea FAT e rimonta */
-//  if (fr == FR_NO_FILESYSTEM) {
-//    printf("No filesystem, format FAT...\r\n");
-//    BYTE work[4096];
-//    fr = f_mkfs(USERPath, FM_FAT | FM_SFD, 0, work, sizeof(work));
-//    printf("f_mkfs -> %d (%s)\r\n", fr, fr_str(fr));
-//    if (fr == FR_OK) {
-//      f_mount(NULL, USERPath, 0);
-//      fr = f_mount(&fs, USERPath, 1);
-//      printf("re-mount -> %d (%s)\r\n", fr, fr_str(fr));
-//    }
-//  }
-//
-//  /* 3) Se montato, crea/scrive file */
-//  if (fr == FR_OK) {
-//    FIL f;
-//    const char *fname = "0:/test.txt";        // percorsi assoluti: usa 0:/ ...
-//    fr = f_open(&f, fname, FA_WRITE | FA_CREATE_ALWAYS);
-//    printf("f_open(%s) -> %d (%s)\r\n", fname, fr, fr_str(fr));
-//
-//    if (fr == FR_OK) {
-//      UINT bw;
-//      char line[64];
-//      int nl = snprintf(line, sizeof(line), "simone testa di culo\r\n");
-//      fr = f_write(&f, line, (UINT)nl, &bw);
-//      // scrivi qualche numero
-//      for (int i=0; i<10; i++) {
-//        int n = snprintf(line, sizeof(line), "i=%d, tick=%lu\r\n", i, HAL_GetTick());
-//        fr = f_write(&f, line, (UINT)n, &bw);
-//        if (fr != FR_OK || bw != (UINT)n) {
-//          printf("f_write err: fr=%d (%s), bw=%u\r\n", fr, fr_str(fr), (unsigned)bw);
-//          break;
-//        }
-//      }
-//
-//      f_sync(&f);      // assicura flush su SD
-//      f_close(&f);
-//      printf("write OK\r\n");
-//    }
-//
-//    /* 4) Lista la root per verificare che il file esista */
-//    DIR dir;
-//    FILINFO fi;
-//  #if _USE_LFN
-//    char lfn[128];
-//    fi.lfname = lfn;
-//    fi.lfsize = sizeof(lfn);
-//  #endif
-//    fr = f_opendir(&dir, "0:/");
-//    if (fr == FR_OK) {
-//      printf("Root listing:\r\n");
-//      for (;;) {
-//        fr = f_readdir(&dir, &fi);
-//        if (fr != FR_OK || fi.fname[0] == 0) break;
-//  #if _USE_LFN
-//        const char *name = (*fi.lfname) ? fi.lfname : fi.fname;
-//  #else
-//        const char *name = fi.fname;
-//  #endif
-//        printf("  %s%s  (%lu bytes)\r\n",
-//               name,
-//               (fi.fattrib & AM_DIR) ? "/" : "",
-//               (unsigned long)fi.fsize);
-//      }
-//      f_closedir(&dir);
+//  HAL_Delay(20);
+//  i2c_scan();  // stampa gli slave visti
+////   prova entrambi gli indirizzi:
+//  uint8_t who=0;
+//  HAL_StatusTypeDef st;
+//  st = HAL_I2C_Mem_Read(&hi2c1, 0x6B<<1, 0x0F, 1, &who, 1, 200);
+//  printf("Try 0x6B WHO=0x%02X st=%d\r\n", who, st);
+//  st = HAL_I2C_Mem_Read(&hi2c1, 0x6A<<1, 0x0F, 1, &who, 1, 200);
+//  printf("Try 0x6A WHO=0x%02X st=%d\r\n", who, st);
+//  while(1);
+
+//  set_usart2_baud(38400);
+//  HAL_UART_Transmit(&huart3, (uint8_t*)"Listen USART2 9600\r\n", 21, 100);
+//  uint8_t ch;
+//  for(;;){
+//    if (HAL_UART_Receive(&huart2, &ch, 1, 500) == HAL_OK) {
+//      HAL_UART_Transmit(&huart3, &ch, 1, 10);  // dovresti vedere $G...NMEA
 //    } else {
-//      printf("f_opendir err: %d (%s)\r\n", fr, fr_str(fr));
+//      HAL_UART_Transmit(&huart3, (uint8_t*)".", 1, 10); // nessun byte
 //    }
-//
-//    f_mount(NULL, USERPath, 1);   // smonta
-//  } else {
-//    printf("Mount FAIL -> %d (%s)\r\n", fr, fr_str(fr));
 //  }
+  /* USER CODE BEGIN 2 */
+
+//  GNSS_StartReception();
+
+
+
   /* USER CODE END 2 */
 
   /* Init scheduler */
   osKernelInitialize();  /* Call init function for freertos objects (in cmsis_os2.c) */
 //  MX_FREERTOS_Init();
+
+//  set_usart2_baud(38400);  // o 9600 se il tuo modulo è a 9600. Lascia quello che produce NMEA leggibili.
+//   HAL_UART_Transmit(&huart3, (uint8_t*)"GNSS DMA+IDLE ready\r\n", 22, 100);
 
   /* Initialize leds */
   BSP_LED_Init(LED_GREEN);
@@ -825,19 +836,27 @@ int main(void)
   /* Initialize USER push-button, will be used to trigger an interrupt each time it's pressed.*/
   BSP_PB_Init(BUTTON_USER, BUTTON_MODE_EXTI);
 
-  /* USER CODE BEGIN BSP */
-  /* -- Sample board code to switch on leds ---- */
-  BSP_LED_On(LED_GREEN);
-  BSP_LED_On(LED_YELLOW);
-  BSP_LED_On(LED_RED);
-  /* USER CODE END BSP */
-
   const osThreadAttr_t IMUTask_attributes = {
     .name = "IMUTask",
     .stack_size = 512 * 4,
     .priority = (osPriority_t) osPriorityNormal,
   };
   osThreadNew(IMUTask, NULL, &IMUTask_attributes);
+
+  // Task GNSS
+//  const osThreadAttr_t GNSSTask_attributes = {
+//    .name = "GNSSTask",
+//    .stack_size = 2048 * 4,           // un po’ più stack per parsing
+//    .priority = (osPriority_t) osPriorityBelowNormal, // o Normal
+//  };
+//  osThreadNew(GNSSTask, NULL, &GNSSTask_attributes);
+
+  /* USER CODE BEGIN BSP */
+  /* -- Sample board code to switch on leds ---- */
+  BSP_LED_On(LED_GREEN);
+  BSP_LED_On(LED_YELLOW);
+  BSP_LED_On(LED_RED);
+  /* USER CODE END BSP */
 
   /* Start scheduler */
   osKernelStart();
@@ -849,13 +868,42 @@ int main(void)
   while (1)
   {
     /* USER CODE END WHILE */
-
+//	  nmea_poll_and_print();
     /* USER CODE BEGIN 3 */
   }
 
   /* USER CODE END 3 */
 }
 
+
+static void GNSS_StartReception(void)
+{
+	printf("GNSS_StartReception\r\n");
+  if (HAL_UARTEx_ReceiveToIdle_DMA(&huart2, nmea_dma_buf, NMEA_DMA_BUF_SZ) != HAL_OK) {
+    printf("RX2 DMA start failed\r\n");
+    Error_Handler();
+  }
+  if (huart2.hdmarx) __HAL_DMA_DISABLE_IT(huart2.hdmarx, DMA_IT_HT);
+}
+
+void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
+{
+	if (huart->Instance == USART2) {
+	    if (Size) {
+	      rb_push(nmea_dma_buf, Size);
+	      gnss_rx_bytes += Size;
+	      gnss_last_rx_ms = HAL_GetTick();
+
+	      // --- SOLO DEBUG: copia i primi 64 byte del chunk ---
+	      uint16_t m = (Size > sizeof(dbg_last_bytes)) ? sizeof(dbg_last_bytes) : Size;
+	      memcpy((void*)dbg_last_bytes, nmea_dma_buf, m);
+	      dbg_last_size  = m;
+	      dbg_rx_events++;
+	    }
+	    // riarmo
+	    GNSS_DMA_Start();
+	  }
+}
 /**
   * @brief System Clock Configuration
   * @retval None
@@ -1064,14 +1112,14 @@ void UartRxCheck(UART_HandleTypeDef *huart, uint16_t Size)
   *               reception buffer until which, data are available)
   * @retval None
   */
-void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
-{
-  if (huart->Instance == USART3)
-  {
-    // Send message to queue from ISR
-//    osMessageQueuePut(UartMessageHandle, &Size, 0, 0);
-  }
-}
+//void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
+//{
+//  if (huart->Instance == USART3)
+//  {
+//    // Send message to queue from ISR
+////    osMessageQueuePut(UartMessageHandle, &Size, 0, 0);
+//  }
+//}
 
 /**
   * @brief  Retargets the C library printf function to the USART.
@@ -1116,6 +1164,14 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
   * @param  Button Specifies the pressed button
   * @retval None
   */
+void BSP_PB_Callback(Button_TypeDef Button)
+{
+  if (Button == BUTTON_USER)
+  {
+    BspButtonState = BUTTON_PRESSED;
+  }
+}
+
 /**
   * @brief  This function is executed in case of error occurrence.
   * @retval None
