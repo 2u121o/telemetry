@@ -52,9 +52,21 @@ static struct {
   int    fix, sats;
   double hdop, alt_m;
   double speed_kn, course_deg;
-  int    have_gga;
-  int    have_rmc;
+
+  // timestamp (ms) dell'ultimo aggiornamento di ciascuna frase
+  uint32_t t_gga_ms;
+  uint32_t t_rmc_ms;
+  uint32_t t_vtg_ms;
+
+  // per evitare doppie righe sulla stessa GGA
+  uint32_t last_logged_gga_ms;
+
+  // flag utili
+  uint8_t  have_date;
 } g = {0};
+
+static inline uint32_t now_ms(void){ return HAL_GetTick(); }
+
 
 const uint8_t UBX_CFG_RATE_25HZ[] = {
   0xB5,0x62,  // sync chars
@@ -215,7 +227,7 @@ static void nmea_poll_and_print(void)
 
 //	    	  gnss_log_write_line(line);
 	    	  if (strstr(line, "GGA,")) {
-
+	    		  g.t_gga_ms = now_ms();   // GGA fresca
 	    	    char *p = line;
 
 	    	    // hhmmss
@@ -263,7 +275,8 @@ static void nmea_poll_and_print(void)
 	    	        nmea_parse_latlon(lon, hemiEW, &dlon, 0)) {
 	    	      g.lat = dlat; g.lon = dlon; g.have_ll = 1;
 	    	    }
-	    	    g.have_gga = 1;
+	    	    g.t_gga_ms = now_ms();
+//	    	    g.have_gga = 1;
 	    	  }
 
 	    	  // --- RMC ---
@@ -309,6 +322,8 @@ static void nmea_poll_and_print(void)
 	    	    if (comma) *comma = 0;
 	    	    strncpy(g.date, date_start, sizeof(g.date)-1);
 	    	    g.date[sizeof(g.date)-1] = 0;
+	    	    g.t_rmc_ms  = now_ms();
+	    	    g.have_date = (g.date[0] != 0);
 
 	    	    // aggiorna lat/lon da RMC (opzionale)
 	    	    double dlat=0, dlon=0;
@@ -319,34 +334,56 @@ static void nmea_poll_and_print(void)
 	    	      g.lon = dlon;
 	    	      g.have_ll = 1;
 	    	    }
-
-	    	    g.have_rmc = (status=='A');
+//	    	    g.have_rmc = (status=='A');
 	    	  }
+	    	  else if (strstr(line, "VTG,")) {
+	    	    // $..VTG,course_t,T,course_m,M,speed_kn,N,speed_km,H,mode*CS
+	    	    char *p = line;
+	    	    // salto fino al primo campo dopo $..VTG,
+	    	    p = strchr(p, ','); if(!p) goto next; p++;
 
-	    	  // --- SCRITTURA CSV: SOLO quando hai GGA+RMC+LL+DATE ---
-	    	  if (gnss_log_open && g.have_gga && g.have_rmc && g.have_ll && g.date[0]) {
-//	    		  printf("g.lat: %s\r\n", g.lat);
-//	    		  printf("g.lon: %s\r\n", g.lon);
-	    	    char slat[24], slon[24], shdop[16], salt[16], sspeed[16], scourse[16];
-	    	    to_fixedN(slat,   sizeof(slat),   g.lat,        6);
-	    	    to_fixedN(slon,   sizeof(slon),   g.lon,        6);
-	    	    to_fixedN(shdop,  sizeof(shdop),  g.hdop,       2);
-	    	    to_fixedN(salt,   sizeof(salt),   g.alt_m,      2);
-	    	    to_fixedN(sspeed, sizeof(sspeed), g.speed_kn,   2);
-	    	    to_fixedN(scourse,sizeof(scourse),g.course_deg, 2);
+	    	    // course_t
+	    	    if (*p != ',') g.course_deg = atof(p);
+	    	    p = strchr(p, ','); if(!p) goto next; p++;  // T
+	    	    p = strchr(p, ','); if(!p) goto next; p++;  // course_m
+	    	    p = strchr(p, ','); if(!p) goto next; p++;  // M
 
-	    	    f_printf(&f_gnss, "%s,%s,%s,%s,%d,%d,%s,%s,%s,%s\r\n",
-	    	             g.utc_hms, g.date, slat, slon, g.fix, g.sats,
-	    	             shdop, salt, sspeed, scourse);
+	    	    // speed_kn
+	    	    if (*p != ',') g.speed_kn = atof(p);
+	    	    p = strchr(p, ','); if(!p) goto next; p++;  // N
 
-	    	    if (++gnss_flush_cnt >= 10) { f_sync(&f_gnss); gnss_flush_cnt = 0; }
-
-	    	    // opzionale: azzera i “segnali” per evitare doppie righe sullo stesso ciclo
-	    	    g.have_gga = g.have_rmc = 0;
+	    	    g.t_vtg_ms = now_ms();
 	    	  }
-
 	      }
 
+	    	  const uint32_t MAX_AGE_MS = 1500;
+	    	  // --- SCRITTURA CSV: SOLO quando hai GGA+RMC+LL+DATE ---
+	    	  if (gnss_log_open && g.have_ll && g.have_date) {
+	    	    if (g.t_gga_ms != g.last_logged_gga_ms) {       // GGA nuova
+	    	      uint32_t t = now_ms();
+
+	    	      // Se non usi VTG puoi togliere il controllo su t_vtg_ms
+	    	      uint8_t rmc_ok = (t - g.t_rmc_ms) <= MAX_AGE_MS;
+	    	      uint8_t vtg_ok = (g.t_vtg_ms == 0) ? 1 : ((t - g.t_vtg_ms) <= MAX_AGE_MS);
+
+	    	      if (rmc_ok && vtg_ok) {
+	    	        char slat[24], slon[24], shdop[16], salt[16], sspeed[16], scourse[16];
+	    	        to_fixedN(slat,   sizeof(slat),   g.lat,        6);
+	    	        to_fixedN(slon,   sizeof(slon),   g.lon,        6);
+	    	        to_fixedN(shdop,  sizeof(shdop),  g.hdop,       2);
+	    	        to_fixedN(salt,   sizeof(salt),   g.alt_m,      2);
+	    	        to_fixedN(sspeed, sizeof(sspeed), g.speed_kn,   2);
+	    	        to_fixedN(scourse,sizeof(scourse),g.course_deg, 2);
+
+	    	        f_printf(&f_gnss, "%s,%s,%s,%s,%d,%d,%s,%s,%s,%s\r\n",
+	    	                 g.utc_hms, g.date, slat, slon, g.fix, g.sats,
+	    	                 shdop, salt, sspeed, scourse);
+
+	    	        if (++gnss_flush_cnt >= 10) { f_sync(&f_gnss); gnss_flush_cnt = 0; }
+	    	        g.last_logged_gga_ms = g.t_gga_ms;
+	    	      }
+	    	    }
+	    	  }
 
 	    next:
 	      L = 0;
@@ -650,7 +687,48 @@ static void hexdump(const uint8_t *p, uint16_t n) {
 
 static void GNSSTask(void *argument)
 {
-	HAL_UART_Transmit(&huart2, UBX_CFG_RATE_25HZ, sizeof(UBX_CFG_RATE_25HZ), 100);
+//	HAL_UART_Transmit(&huart2, UBX_CFG_RATE_25HZ, sizeof(UBX_CFG_RATE_25HZ), 100);
+
+	const uint8_t UBX_CFG_RATE_4HZ[] = {
+	  0xB5,0x62, 0x06,0x08, 0x06,0x00, 0xFA,0x00, 0x01,0x00, 0x00,0x00, 0x0F,0x94
+	};
+
+	const uint8_t UBX_MSG_GGA_UART1_1[] = { // NMEA GxGGA (0xF0 0x00)
+	  0xB5,0x62,0x06,0x01,0x08,0x00, 0xF0,0x00, 0x00,0x01,0x00,0x00,0x00,0x00, 0x28,0x2C
+	};
+	const uint8_t UBX_MSG_RMC_UART1_1[] = { // NMEA GxRMC (0xF0 0x04)
+	  0xB5,0x62,0x06,0x01,0x08,0x00, 0xF0,0x04, 0x00,0x01,0x00,0x00,0x00,0x00, 0x2C,0x3C
+	};
+	const uint8_t UBX_MSG_VTG_UART1_1[] = { // NMEA GxVTG (0xF0 0x05)
+	  0xB5,0x62,0x06,0x01,0x08,0x00, 0xF0,0x05, 0x00,0x01,0x00,0x00,0x00,0x00, 0x2D,0x42
+	};
+	const uint8_t UBX_MSG_GLL_OFF[] = { // GxGLL (0xF0 0x01)
+	  0xB5,0x62,0x06,0x01,0x08,0x00, 0xF0,0x01, 0x00,0x00,0x00,0x00,0x00,0x00, 0x00,0x2A
+	};
+	const uint8_t UBX_MSG_GSA_OFF[] = { // GxGSA (0xF0 0x02)
+	  0xB5,0x62,0x06,0x01,0x08,0x00, 0xF0,0x02, 0x00,0x00,0x00,0x00,0x00,0x00, 0x01,0x31
+	};
+	const uint8_t UBX_MSG_GSV_OFF[] = { // GxGSV (0xF0 0x03)
+	  0xB5,0x62,0x06,0x01,0x08,0x00, 0xF0,0x03, 0x00,0x00,0x00,0x00,0x00,0x00, 0x02,0x38
+	};
+	HAL_UART_Transmit(&huart2, UBX_CFG_RATE_4HZ, sizeof(UBX_CFG_RATE_4HZ), 100);
+	HAL_Delay(50);
+	HAL_UART_Transmit(&huart2, UBX_MSG_GGA_UART1_1, sizeof(UBX_MSG_GGA_UART1_1), 100);
+	HAL_UART_Transmit(&huart2, UBX_MSG_RMC_UART1_1, sizeof(UBX_MSG_RMC_UART1_1), 100);
+	HAL_UART_Transmit(&huart2, UBX_MSG_VTG_UART1_1, sizeof(UBX_MSG_VTG_UART1_1), 100);
+	HAL_Delay(50);
+	HAL_UART_Transmit(&huart2, UBX_MSG_GLL_OFF, sizeof(UBX_MSG_GLL_OFF), 100);
+	HAL_UART_Transmit(&huart2, UBX_MSG_GSA_OFF, sizeof(UBX_MSG_GSA_OFF), 100);
+	HAL_UART_Transmit(&huart2, UBX_MSG_GSV_OFF, sizeof(UBX_MSG_GSV_OFF), 100);
+
+//	const char *cmds[] = {
+//	  "$PUBX,40,GSV,0,1,0,0,0,0*59\r\n",
+//	  "$PUBX,40,GSA,0,1,0,0,0,0*4E\r\n",   // opzionale
+//	  "$PUBX,40,GLL,0,1,0,0,0,0*5C\r\n"    // opzionale
+//	};
+//	for (int i=0;i<sizeof(cmds)/sizeof(cmds[0]);++i)
+//	  HAL_UART_Transmit(&huart2, (uint8_t*)cmds[i], strlen(cmds[i]), 100);
+
 	 FRESULT fr = f_mount(&fs_gnss, USERPath, 1);
 	    printf("GNSS f_mount -> %d\r\n", fr);
 	    if (fr != FR_OK) {
@@ -673,7 +751,7 @@ static void GNSSTask(void *argument)
 	    }
 //	    HAL_Delay(100);
 //	    printf("GNSS task started (USART2)\r\n");
-//	    GNSS_DMA_Start();
+	    GNSS_DMA_Start();
 
 //	    uint32_t t0 = HAL_GetTick();
 	    uint32_t t0 = 0;
@@ -696,22 +774,24 @@ static void GNSSTask(void *argument)
 	    						vTaskDelete(NULL);
 
 	    	}
-	    	if (HAL_GetTick() - t0 >= 1000) {
-					t0 += 1000;
-					uint32_t age = HAL_GetTick() - gnss_last_rx_ms;
-					uint32_t ev  = dbg_rx_events;
-					uint16_t sz  = dbg_last_size;
-	//	            printf("[GNSS] bytes=%lu last=%lums events=%lu lastSz=%u\r\n",
-	//	                   gnss_rx_bytes, age, ev, sz);
+
+	    	uint32_t current_tick = HAL_GetTick();
+	    	if (current_tick - t0 >= 1000) {
+					t0 += current_tick;
+					uint32_t age = current_tick - gnss_last_rx_ms;
+//					uint32_t ev  = dbg_rx_events;
+//					uint16_t sz  = dbg_last_size;
+//		            printf("[GNSS] bytes=%lu last=%lums events=%lu lastSz=%u\r\n",
+//		                   gnss_rx_bytes, age, ev, sz);
 					if (age > 3000) {
-	//	                printf("[GNSS] nessun dato recente -> restart DMA\r\n");
+		                printf("[GNSS] nessun dato recente -> restart DMA\r\n");
 						GNSS_DMA_Start();
 					}
 				}
 	//	        printf("before nmea_poll_and_print\r\n");
 				nmea_poll_and_print();
 	//	        printf("after nmea_poll_and_print\r\n");
-				osDelay(10);
+//				osDelay(10);
 			}
 
 	    // (in pratica non ci arrivi mai; ma per sicurezza)
