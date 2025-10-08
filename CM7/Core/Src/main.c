@@ -29,6 +29,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include <stdio.h>
+#include <stdlib.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -54,6 +55,16 @@ static struct {
   int    have_gga;
   int    have_rmc;
 } g = {0};
+
+const uint8_t UBX_CFG_RATE_25HZ[] = {
+  0xB5,0x62,  // sync chars
+  0x06,0x08,  // class=CFG, id=RATE
+  0x06,0x00,  // length
+  0x28,0x00,  // measRate = 40 ms
+  0x01,0x00,  // navRate = 1
+  0x00,0x00,  // timeRef = UTC
+  0x37,0x8A   // checksum (calc)
+};
 
 //static gnss_state_t g = {0};
 
@@ -132,19 +143,44 @@ static int nmea_check_cs(const char *s){
 }
 
 // ddmm.mmmm (+ N/S, E/W) -> gradi decimali
-static int nmea_parse_latlon(const char *ddmm, const char hemi, double *deg_out, int is_lat){
-  if (!ddmm || !*ddmm) return 0;
-  // lat: 2 cifre di gradi; lon: 3 cifre di gradi
-  int gdigits = is_lat ? 2 : 3;
-  char gbuf[4] = {0};
-  for(int i=0;i<gdigits;i++){ if (ddmm[i]<'0'||ddmm[i]>'9') return 0; gbuf[i]=ddmm[i]; }
-  int deg = atoi(gbuf);
-  double min = atof(ddmm + gdigits);
-  double dec = deg + (min/60.0);
-  if (hemi=='S' || hemi=='W') dec = -dec;
-  *deg_out = dec;
-  return 1;
+static int nmea_parse_latlon(const char *field, char hemi, double *deg_out, int is_lat)
+{
+
+    if (!field || !*field) return 0;
+
+    // Copia in buffer locale e tronca eventuali spazi
+    char buf[24];
+    size_t L = strlen(field);
+    if (L >= sizeof(buf)) L = sizeof(buf)-1;
+    memcpy(buf, field, L);
+    buf[L] = 0;
+
+    // Aspettiamo "ddmm.mmmm" (lat) o "dddmm.mmmm" (lon)
+    int gdigits = is_lat ? 2 : 3;
+    for (int i = 0; i < gdigits; i++) {
+        if (buf[i] < '0' || buf[i] > '9') return 0; // gradi non numerici
+    }
+    if (buf[gdigits] == 0) return 0;                // manca la parte minuti
+
+    // Estraggo gradi
+    char gbuf[4] = {0};
+    memcpy(gbuf, buf, gdigits);                     // 2 o 3 cifre
+    double deg = (double)atoi(gbuf);
+
+    // Minuti (mm.mmmm)
+    double min = strtod(buf + gdigits, '\0');       // es. "51.46361"
+    if (min < 0 || min >= 60.0)
+	{
+		return 0;
+	}
+
+    double dec = deg + (min / 60.0);
+    if (hemi == 'S' || hemi == 'W') dec = -dec;
+
+    *deg_out = dec;
+    return 1;
 }
+
 
 static void to_fixedN(char *dst, size_t n, double v, int dec){
   long mul = 1;
@@ -156,7 +192,7 @@ static void to_fixedN(char *dst, size_t n, double v, int dec){
   if (dec == 0) {
     snprintf(dst, n, "%s%ld", (sgn<0?"-":""), intp);
   } else {
-    // padding zeri sulla parte frazionaria
+    // padding zeri sulla parte frazionarian
     char fracbuf[16];
     snprintf(fracbuf, sizeof(fracbuf), "%0*ld", dec, frac);
     snprintf(dst, n, "%s%ld.%s", (sgn<0?"-":""), intp, fracbuf);
@@ -176,8 +212,10 @@ static void nmea_poll_and_print(void)
 
 	      line[L] = 0;
 	      if (L >= 9 && line[0]=='$' && nmea_check_cs(line)) {
+
 //	    	  gnss_log_write_line(line);
 	    	  if (strstr(line, "GGA,")) {
+
 	    	    char *p = line;
 
 	    	    // hhmmss
@@ -189,17 +227,20 @@ static void nmea_poll_and_print(void)
 	    	    g.utc_hms[sizeof(g.utc_hms)-1]=0;
 	    	    p = comma+1;
 
-	    	    // lat, N/S
-	    	    char *lat = p;
-	    	    p = strchr(p, ','); if(!p) goto next; *p = 0; p++;
-	    	    char hemiNS = *p;
-	    	    p = strchr(p, ','); if(!p) goto next; p++;  // vai oltre N/S
+	    	    // lat
+	    	        char *lat = p;
+	    	        p = strchr(p, ','); if (!p) goto next; *p = 0; p++;    // chiudi lat, p ora punta a N/S
+	    	        if (*p == 0 || *p == ',') goto next;                   // campo vuoto -> scarta
+	    	        char hemiNS = *p;
+	    	        p = strchr(p, ','); if (!p) goto next; p++;            // vai oltre N/S
 
-	    	    // lon, E/W
-	    	    char *lon = p;
-	    	    p = strchr(p, ','); if(!p) goto next; *p = 0; p++;
-	    	    char hemiEW = *p;
-	    	    p = strchr(p, ','); if(!p) goto next; p++;  // vai oltre E/W
+	    	        // lon
+	    	        char *lon = p;
+	    	        p = strchr(p, ','); if (!p) goto next; *p = 0; p++;    // chiudi lon, p ora punta a E/W
+	    	        if (*p == 0 || *p == ',') goto next;
+	    	        char hemiEW = *p;
+	    	        p = strchr(p, ','); if (!p) goto next; p++;            // vai oltre E/W
+
 
 	    	    // fix
 	    	    g.fix = atoi(p);
@@ -227,6 +268,7 @@ static void nmea_poll_and_print(void)
 
 	    	  // --- RMC ---
 	    	  else if (strstr(line, "RMC,")) {
+
 	    	    char *p = line;
 
 	    	    // hhmmss
@@ -270,9 +312,12 @@ static void nmea_poll_and_print(void)
 
 	    	    // aggiorna lat/lon da RMC (opzionale)
 	    	    double dlat=0, dlon=0;
-	    	    if (nmea_parse_latlon(lat, hemiNS, &dlat, 1) &&
-	    	        nmea_parse_latlon(lon, hemiEW, &dlon, 0)) {
-	    	      g.lat = dlat; g.lon = dlon; g.have_ll = 1;
+	    	    int ok_lat = nmea_parse_latlon(lat, hemiNS, &dlat, 1);
+	    	    int ok_lon = nmea_parse_latlon(lon, hemiEW, &dlon, 0);
+	    	    if (ok_lat && ok_lon) {
+	    	      g.lat = dlat;
+	    	      g.lon = dlon;
+	    	      g.have_ll = 1;
 	    	    }
 
 	    	    g.have_rmc = (status=='A');
@@ -280,6 +325,8 @@ static void nmea_poll_and_print(void)
 
 	    	  // --- SCRITTURA CSV: SOLO quando hai GGA+RMC+LL+DATE ---
 	    	  if (gnss_log_open && g.have_gga && g.have_rmc && g.have_ll && g.date[0]) {
+//	    		  printf("g.lat: %s\r\n", g.lat);
+//	    		  printf("g.lon: %s\r\n", g.lon);
 	    	    char slat[24], slon[24], shdop[16], salt[16], sspeed[16], scourse[16];
 	    	    to_fixedN(slat,   sizeof(slat),   g.lat,        6);
 	    	    to_fixedN(slon,   sizeof(slon),   g.lon,        6);
@@ -603,7 +650,7 @@ static void hexdump(const uint8_t *p, uint16_t n) {
 
 static void GNSSTask(void *argument)
 {
-
+	HAL_UART_Transmit(&huart2, UBX_CFG_RATE_25HZ, sizeof(UBX_CFG_RATE_25HZ), 100);
 	 FRESULT fr = f_mount(&fs_gnss, USERPath, 1);
 	    printf("GNSS f_mount -> %d\r\n", fr);
 	    if (fr != FR_OK) {
@@ -823,6 +870,9 @@ static const char *fr_str(FRESULT fr){
     default: return "FR_xxx";
   }
 }
+
+
+
 
 
 /* USER CODE END 0 */
