@@ -17,6 +17,7 @@
   */
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
+extern "C" {
 #include "main.h"
 #include "cmsis_os.h"
 #include "dma.h"
@@ -25,11 +26,15 @@
 #include "spi.h"
 #include "usart.h"
 #include "gpio.h"
+#include <stdio.h>
+#include <stdlib.h>
+}
+
+#include "MainTask.hpp"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include <stdio.h>
-#include <stdlib.h>
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -158,39 +163,39 @@ static int nmea_check_cs(const char *s){
 static int nmea_parse_latlon(const char *field, char hemi, double *deg_out, int is_lat)
 {
 
-    if (!field || !*field) return 0;
-
-    // Copia in buffer locale e tronca eventuali spazi
-    char buf[24];
-    size_t L = strlen(field);
-    if (L >= sizeof(buf)) L = sizeof(buf)-1;
-    memcpy(buf, field, L);
-    buf[L] = 0;
-
-    // Aspettiamo "ddmm.mmmm" (lat) o "dddmm.mmmm" (lon)
-    int gdigits = is_lat ? 2 : 3;
-    for (int i = 0; i < gdigits; i++) {
-        if (buf[i] < '0' || buf[i] > '9') return 0; // gradi non numerici
-    }
-    if (buf[gdigits] == 0) return 0;                // manca la parte minuti
-
-    // Estraggo gradi
-    char gbuf[4] = {0};
-    memcpy(gbuf, buf, gdigits);                     // 2 o 3 cifre
-    double deg = (double)atoi(gbuf);
-
-    // Minuti (mm.mmmm)
-    double min = strtod(buf + gdigits, '\0');       // es. "51.46361"
-    if (min < 0 || min >= 60.0)
-	{
-		return 0;
-	}
-
-    double dec = deg + (min / 60.0);
-    if (hemi == 'S' || hemi == 'W') dec = -dec;
-
-    *deg_out = dec;
-    return 1;
+//    if (!field || !*field) return 0;
+//
+//    // Copia in buffer locale e tronca eventuali spazi
+//    char buf[24];
+//    size_t L = strlen(field);
+//    if (L >= sizeof(buf)) L = sizeof(buf)-1;
+//    memcpy(buf, field, L);
+//    buf[L] = 0;
+//
+//    // Aspettiamo "ddmm.mmmm" (lat) o "dddmm.mmmm" (lon)
+//    int gdigits = is_lat ? 2 : 3;
+//    for (int i = 0; i < gdigits; i++) {
+//        if (buf[i] < '0' || buf[i] > '9') return 0; // gradi non numerici
+//    }
+//    if (buf[gdigits] == 0) return 0;                // manca la parte minuti
+//
+//    // Estraggo gradi
+//    char gbuf[4] = {0};
+//    memcpy(gbuf, buf, gdigits);                     // 2 o 3 cifre
+//    double deg = (double)atoi(gbuf);
+//
+//    // Minuti (mm.mmmm)
+//    double min = strtod(buf + gdigits, '\0');       // es. "51.46361"
+//    if (min < 0 || min >= 60.0)
+//	{
+//		return 0;
+//	}
+//
+//    double dec = deg + (min / 60.0);
+//    if (hemi == 'S' || hemi == 'W') dec = -dec;
+//
+//    *deg_out = dec;
+//    return 1;
 }
 
 
@@ -214,184 +219,184 @@ static void to_fixedN(char *dst, size_t n, double v, int dec){
 static void nmea_poll_and_print(void)
 {
 
-	 static char line[128];
-	  static uint16_t L = 0;
-	  uint8_t b;
-
-	  while (rb_pop_byte(&b)) {
-	    if (b == '\r') continue;
-	    if (b == '\n') {
-
-	      line[L] = 0;
-	      if (L >= 9 && line[0]=='$' && nmea_check_cs(line)) {
-
-//	    	  gnss_log_write_line(line);
-	    	  if (strstr(line, "GGA,")) {
-	    		  g.t_gga_ms = now_ms();   // GGA fresca
-	    	    char *p = line;
-
-	    	    // hhmmss
-	    	    p = strchr(p, ','); if(!p) goto next; p++;
-	    	    // salva l’ora
-	    	    char *comma = strchr(p, ','); if(!comma) goto next;
-	    	    *comma = 0;
-	    	    strncpy(g.utc_hms, p, sizeof(g.utc_hms)-1);
-	    	    g.utc_hms[sizeof(g.utc_hms)-1]=0;
-	    	    p = comma+1;
-
-	    	    // lat
-	    	        char *lat = p;
-	    	        p = strchr(p, ','); if (!p) goto next; *p = 0; p++;    // chiudi lat, p ora punta a N/S
-	    	        if (*p == 0 || *p == ',') goto next;                   // campo vuoto -> scarta
-	    	        char hemiNS = *p;
-	    	        p = strchr(p, ','); if (!p) goto next; p++;            // vai oltre N/S
-
-	    	        // lon
-	    	        char *lon = p;
-	    	        p = strchr(p, ','); if (!p) goto next; *p = 0; p++;    // chiudi lon, p ora punta a E/W
-	    	        if (*p == 0 || *p == ',') goto next;
-	    	        char hemiEW = *p;
-	    	        p = strchr(p, ','); if (!p) goto next; p++;            // vai oltre E/W
-
-
-	    	    // fix
-	    	    g.fix = atoi(p);
-	    	    p = strchr(p, ','); if(!p) goto next; p++;
-
-	    	    // sats
-	    	    g.sats = atoi(p);
-	    	    p = strchr(p, ','); if(!p) goto next; p++;
-
-	    	    // hdop
-	    	    g.hdop = atof(p);
-	    	    p = strchr(p, ','); if(!p) goto next; p++;
-
-	    	    // alt (m)
-	    	    g.alt_m = atof(p);
-
-	    	    // converti lat/lon
-	    	    double dlat=0, dlon=0;
-	    	    if (nmea_parse_latlon(lat, hemiNS, &dlat, 1) &&
-	    	        nmea_parse_latlon(lon, hemiEW, &dlon, 0)) {
-	    	      g.lat = dlat; g.lon = dlon; g.have_ll = 1;
-	    	    }
-	    	    g.t_gga_ms = now_ms();
-//	    	    g.have_gga = 1;
-	    	  }
-
-	    	  // --- RMC ---
-	    	  else if (strstr(line, "RMC,")) {
-
-	    	    char *p = line;
-
-	    	    // hhmmss
-	    	    p = strchr(p, ','); if(!p) goto next; p++;
-	    	    char *comma = strchr(p, ','); if(!comma) goto next;
-	    	    *comma = 0;
-	    	    strncpy(g.utc_hms, p, sizeof(g.utc_hms)-1);
-	    	    g.utc_hms[sizeof(g.utc_hms)-1]=0;
-	    	    p = comma+1;
-
-	    	    // status
-	    	    char status = *p;
-	    	    p = strchr(p, ','); if(!p) goto next; p++;
-
-	    	    // lat, N/S
-	    	    char *lat = p;
-	    	    p = strchr(p, ','); if(!p) goto next; *p = 0; p++;
-	    	    char hemiNS = *p;
-	    	    p = strchr(p, ','); if(!p) goto next; p++;
-
-	    	    // lon, E/W
-	    	    char *lon = p;
-	    	    p = strchr(p, ','); if(!p) goto next; *p = 0; p++;
-	    	    char hemiEW = *p;
-	    	    p = strchr(p, ','); if(!p) goto next; p++;
-
-	    	    // speed (kn)
-	    	    g.speed_kn = atof(p);
-	    	    p = strchr(p, ','); if(!p) goto next; p++;
-
-	    	    // course (deg)
-	    	    g.course_deg = atof(p);
-	    	    p = strchr(p, ','); if(!p) goto next; p++;      // *** AVANZA OLTRE LA COURSE ***
-
-	    	    // date ddmmyy
-	    	    char *date_start = p;
-	    	    comma = strchr(p, ',');
-	    	    if (comma) *comma = 0;
-	    	    strncpy(g.date, date_start, sizeof(g.date)-1);
-	    	    g.date[sizeof(g.date)-1] = 0;
-	    	    g.t_rmc_ms  = now_ms();
-	    	    g.have_date = (g.date[0] != 0);
-
-	    	    // aggiorna lat/lon da RMC (opzionale)
-	    	    double dlat=0, dlon=0;
-	    	    int ok_lat = nmea_parse_latlon(lat, hemiNS, &dlat, 1);
-	    	    int ok_lon = nmea_parse_latlon(lon, hemiEW, &dlon, 0);
-	    	    if (ok_lat && ok_lon) {
-	    	      g.lat = dlat;
-	    	      g.lon = dlon;
-	    	      g.have_ll = 1;
-	    	    }
-//	    	    g.have_rmc = (status=='A');
-	    	  }
-	    	  else if (strstr(line, "VTG,")) {
-	    	    // $..VTG,course_t,T,course_m,M,speed_kn,N,speed_km,H,mode*CS
-	    	    char *p = line;
-	    	    // salto fino al primo campo dopo $..VTG,
-	    	    p = strchr(p, ','); if(!p) goto next; p++;
-
-	    	    // course_t
-	    	    if (*p != ',') g.course_deg = atof(p);
-	    	    p = strchr(p, ','); if(!p) goto next; p++;  // T
-	    	    p = strchr(p, ','); if(!p) goto next; p++;  // course_m
-	    	    p = strchr(p, ','); if(!p) goto next; p++;  // M
-
-	    	    // speed_kn
-	    	    if (*p != ',') g.speed_kn = atof(p);
-	    	    p = strchr(p, ','); if(!p) goto next; p++;  // N
-
-	    	    g.t_vtg_ms = now_ms();
-	    	  }
-	      }
-
-	    	  const uint32_t MAX_AGE_MS = 1500;
-	    	  // --- SCRITTURA CSV: SOLO quando hai GGA+RMC+LL+DATE ---
-	    	  if (gnss_log_open && g.have_ll && g.have_date) {
-	    	    if (g.t_gga_ms != g.last_logged_gga_ms) {       // GGA nuova
-	    	      uint32_t t = now_ms();
-
-	    	      // Se non usi VTG puoi togliere il controllo su t_vtg_ms
-	    	      uint8_t rmc_ok = (t - g.t_rmc_ms) <= MAX_AGE_MS;
-	    	      uint8_t vtg_ok = (g.t_vtg_ms == 0) ? 1 : ((t - g.t_vtg_ms) <= MAX_AGE_MS);
-
-	    	      if (rmc_ok && vtg_ok) {
-	    	        char slat[24], slon[24], shdop[16], salt[16], sspeed[16], scourse[16];
-	    	        to_fixedN(slat,   sizeof(slat),   g.lat,        6);
-	    	        to_fixedN(slon,   sizeof(slon),   g.lon,        6);
-	    	        to_fixedN(shdop,  sizeof(shdop),  g.hdop,       2);
-	    	        to_fixedN(salt,   sizeof(salt),   g.alt_m,      2);
-	    	        to_fixedN(sspeed, sizeof(sspeed), g.speed_kn,   2);
-	    	        to_fixedN(scourse,sizeof(scourse),g.course_deg, 2);
-
-	    	        f_printf(&f_gnss, "%s,%s,%s,%s,%d,%d,%s,%s,%s,%s\r\n",
-	    	                 g.utc_hms, g.date, slat, slon, g.fix, g.sats,
-	    	                 shdop, salt, sspeed, scourse);
-
-	    	        if (++gnss_flush_cnt >= 10) { f_sync(&f_gnss); gnss_flush_cnt = 0; }
-	    	        g.last_logged_gga_ms = g.t_gga_ms;
-	    	      }
-	    	    }
-	    	  }
-
-	    next:
-	      L = 0;
-	    } else {
-	      if (L < sizeof(line)-1) line[L++] = (char)b;
-	      else L = 0; // overflow -> reset riga
-	    }
-	  }
+//	 static char line[128];
+//	  static uint16_t L = 0;
+//	  uint8_t b;
+//
+//	  while (rb_pop_byte(&b)) {
+//	    if (b == '\r') continue;
+//	    if (b == '\n') {
+//
+//	      line[L] = 0;
+//	      if (L >= 9 && line[0]=='$' && nmea_check_cs(line)) {
+//
+////	    	  gnss_log_write_line(line);
+//	    	  if (strstr(line, "GGA,")) {
+//	    		  g.t_gga_ms = now_ms();   // GGA fresca
+//	    	    char *p = line;
+//
+//	    	    // hhmmss
+//	    	    p = strchr(p, ','); if(!p) goto next; p++;
+//	    	    // salva l’ora
+//	    	    char *comma = strchr(p, ','); if(!comma) goto next;
+//	    	    *comma = 0;
+//	    	    strncpy(g.utc_hms, p, sizeof(g.utc_hms)-1);
+//	    	    g.utc_hms[sizeof(g.utc_hms)-1]=0;
+//	    	    p = comma+1;
+//
+//	    	    // lat
+//	    	        char *lat = p;
+//	    	        p = strchr(p, ','); if (!p) goto next; *p = 0; p++;    // chiudi lat, p ora punta a N/S
+//	    	        if (*p == 0 || *p == ',') goto next;                   // campo vuoto -> scarta
+//	    	        char hemiNS = *p;
+//	    	        p = strchr(p, ','); if (!p) goto next; p++;            // vai oltre N/S
+//
+//	    	        // lon
+//	    	        char *lon = p;
+//	    	        p = strchr(p, ','); if (!p) goto next; *p = 0; p++;    // chiudi lon, p ora punta a E/W
+//	    	        if (*p == 0 || *p == ',') goto next;
+//	    	        char hemiEW = *p;
+//	    	        p = strchr(p, ','); if (!p) goto next; p++;            // vai oltre E/W
+//
+//
+//	    	    // fix
+//	    	    g.fix = atoi(p);
+//	    	    p = strchr(p, ','); if(!p) goto next; p++;
+//
+//	    	    // sats
+//	    	    g.sats = atoi(p);
+//	    	    p = strchr(p, ','); if(!p) goto next; p++;
+//
+//	    	    // hdop
+//	    	    g.hdop = atof(p);
+//	    	    p = strchr(p, ','); if(!p) goto next; p++;
+//
+//	    	    // alt (m)
+//	    	    g.alt_m = atof(p);
+//
+//	    	    // converti lat/lon
+//	    	    double dlat=0, dlon=0;
+//	    	    if (nmea_parse_latlon(lat, hemiNS, &dlat, 1) &&
+//	    	        nmea_parse_latlon(lon, hemiEW, &dlon, 0)) {
+//	    	      g.lat = dlat; g.lon = dlon; g.have_ll = 1;
+//	    	    }
+//	    	    g.t_gga_ms = now_ms();
+////	    	    g.have_gga = 1;
+//	    	  }
+//
+//	    	  // --- RMC ---
+//	    	  else if (strstr(line, "RMC,")) {
+//
+//	    	    char *p = line;
+//
+//	    	    // hhmmss
+//	    	    p = strchr(p, ','); if(!p) goto next; p++;
+//	    	    char *comma = strchr(p, ','); if(!comma) goto next;
+//	    	    *comma = 0;
+//	    	    strncpy(g.utc_hms, p, sizeof(g.utc_hms)-1);
+//	    	    g.utc_hms[sizeof(g.utc_hms)-1]=0;
+//	    	    p = comma+1;
+//
+//	    	    // status
+//	    	    char status = *p;
+//	    	    p = strchr(p, ','); if(!p) goto next; p++;
+//
+//	    	    // lat, N/S
+//	    	    char *lat = p;
+//	    	    p = strchr(p, ','); if(!p) goto next; *p = 0; p++;
+//	    	    char hemiNS = *p;
+//	    	    p = strchr(p, ','); if(!p) goto next; p++;
+//
+//	    	    // lon, E/W
+//	    	    char *lon = p;
+//	    	    p = strchr(p, ','); if(!p) goto next; *p = 0; p++;
+//	    	    char hemiEW = *p;
+//	    	    p = strchr(p, ','); if(!p) goto next; p++;
+//
+//	    	    // speed (kn)
+//	    	    g.speed_kn = atof(p);
+//	    	    p = strchr(p, ','); if(!p) goto next; p++;
+//
+//	    	    // course (deg)
+//	    	    g.course_deg = atof(p);
+//	    	    p = strchr(p, ','); if(!p) goto next; p++;      // *** AVANZA OLTRE LA COURSE ***
+//
+//	    	    // date ddmmyy
+//	    	    char *date_start = p;
+//	    	    comma = strchr(p, ',');
+//	    	    if (comma) *comma = 0;
+//	    	    strncpy(g.date, date_start, sizeof(g.date)-1);
+//	    	    g.date[sizeof(g.date)-1] = 0;
+//	    	    g.t_rmc_ms  = now_ms();
+//	    	    g.have_date = (g.date[0] != 0);
+//
+//	    	    // aggiorna lat/lon da RMC (opzionale)
+//	    	    double dlat=0, dlon=0;
+//	    	    int ok_lat = nmea_parse_latlon(lat, hemiNS, &dlat, 1);
+//	    	    int ok_lon = nmea_parse_latlon(lon, hemiEW, &dlon, 0);
+//	    	    if (ok_lat && ok_lon) {
+//	    	      g.lat = dlat;
+//	    	      g.lon = dlon;
+//	    	      g.have_ll = 1;
+//	    	    }
+////	    	    g.have_rmc = (status=='A');
+//	    	  }
+//	    	  else if (strstr(line, "VTG,")) {
+//	    	    // $..VTG,course_t,T,course_m,M,speed_kn,N,speed_km,H,mode*CS
+//	    	    char *p = line;
+//	    	    // salto fino al primo campo dopo $..VTG,
+//	    	    p = strchr(p, ','); if(!p) goto next; p++;
+//
+//	    	    // course_t
+//	    	    if (*p != ',') g.course_deg = atof(p);
+//	    	    p = strchr(p, ','); if(!p) goto next; p++;  // T
+//	    	    p = strchr(p, ','); if(!p) goto next; p++;  // course_m
+//	    	    p = strchr(p, ','); if(!p) goto next; p++;  // M
+//
+//	    	    // speed_kn
+//	    	    if (*p != ',') g.speed_kn = atof(p);
+//	    	    p = strchr(p, ','); if(!p) goto next; p++;  // N
+//
+//	    	    g.t_vtg_ms = now_ms();
+//	    	  }
+//	      }
+//
+//	    	  const uint32_t MAX_AGE_MS = 1500;
+//	    	  // --- SCRITTURA CSV: SOLO quando hai GGA+RMC+LL+DATE ---
+//	    	  if (gnss_log_open && g.have_ll && g.have_date) {
+//	    	    if (g.t_gga_ms != g.last_logged_gga_ms) {       // GGA nuova
+//	    	      uint32_t t = now_ms();
+//
+//	    	      // Se non usi VTG puoi togliere il controllo su t_vtg_ms
+//	    	      uint8_t rmc_ok = (t - g.t_rmc_ms) <= MAX_AGE_MS;
+//	    	      uint8_t vtg_ok = (g.t_vtg_ms == 0) ? 1 : ((t - g.t_vtg_ms) <= MAX_AGE_MS);
+//
+//	    	      if (rmc_ok && vtg_ok) {
+//	    	        char slat[24], slon[24], shdop[16], salt[16], sspeed[16], scourse[16];
+//	    	        to_fixedN(slat,   sizeof(slat),   g.lat,        6);
+//	    	        to_fixedN(slon,   sizeof(slon),   g.lon,        6);
+//	    	        to_fixedN(shdop,  sizeof(shdop),  g.hdop,       2);
+//	    	        to_fixedN(salt,   sizeof(salt),   g.alt_m,      2);
+//	    	        to_fixedN(sspeed, sizeof(sspeed), g.speed_kn,   2);
+//	    	        to_fixedN(scourse,sizeof(scourse),g.course_deg, 2);
+//
+//	    	        f_printf(&f_gnss, "%s,%s,%s,%s,%d,%d,%s,%s,%s,%s\r\n",
+//	    	                 g.utc_hms, g.date, slat, slon, g.fix, g.sats,
+//	    	                 shdop, salt, sspeed, scourse);
+//
+//	    	        if (++gnss_flush_cnt >= 10) { f_sync(&f_gnss); gnss_flush_cnt = 0; }
+//	    	        g.last_logged_gga_ms = g.t_gga_ms;
+//	    	      }
+//	    	    }
+//	    	  }
+//
+//	    next:
+//	      L = 0;
+//	    } else {
+//	      if (L < sizeof(line)-1) line[L++] = (char)b;
+//	      else L = 0; // overflow -> reset riga
+//	    }
+//	  }
 
 }
 
@@ -1089,7 +1094,10 @@ int main(void)
 
 //  GNSS_StartReception();
 
-
+ telemetry::MainTask main_task;
+ main_task.configure();
+ main_task.start();
+ main_task.run();
 
   /* USER CODE END 2 */
 
@@ -1168,7 +1176,7 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
 
 	      // --- SOLO DEBUG: copia i primi 64 byte del chunk ---
 	      uint16_t m = (Size > sizeof(dbg_last_bytes)) ? sizeof(dbg_last_bytes) : Size;
-	      memcpy((void*)dbg_last_bytes, nmea_dma_buf, m);
+//	     h memcpy((void*)dbg_last_bytes, nmea_dma_buf, m);
 	      dbg_last_size  = m;
 	      dbg_rx_events++;
 	    }
