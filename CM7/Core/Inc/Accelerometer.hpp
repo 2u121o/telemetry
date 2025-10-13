@@ -29,7 +29,7 @@ class Accelerometer
 	public:
 
 
-		HAL_StatusTypeDef init(I2C_HandleTypeDef* hi2c, const Config& config = Config());
+		bool init(I2C_HandleTypeDef* hi2c, const Config& config = Config());
 		HAL_StatusTypeDef readData(float *ax, float *ay, float *az);
 
 

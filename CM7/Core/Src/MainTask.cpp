@@ -16,13 +16,17 @@ void MainTask::run()
 
 	MX_I2C1_Init();
 	HAL_Delay(100);
-	HAL_StatusTypeDef ret_init = accelerometer_.init(&hi2c1);
-	while (ret_init != HAL_OK)
+	bool ret_init_acc = accelerometer_.init(&hi2c1);
+
+	char* file_name = "test";
+	char* header = "timestamp, ax, ay, az";
+	if(!data_writer_.init(file_name, header))
 	{
-		ret_init = accelerometer_.init(&hi2c1);
+		return;
 	}
 
 
+	data_writer_.close();
 	while(true)
 	{
 		float ax;
@@ -34,6 +38,8 @@ void MainTask::run()
 		{
 			printf("data not read\r\n");
 		}
+
+
 
 	}
 }
