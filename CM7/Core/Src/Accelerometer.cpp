@@ -3,7 +3,7 @@
 namespace telemetry
 {
 
-HAL_StatusTypeDef Accelerometer::init(I2C_HandleTypeDef* hi2c, const Config& config)
+bool Accelerometer::init(I2C_HandleTypeDef* hi2c, const Config& config)
 {
   hi2c_ = hi2c;
   config_ = config;
@@ -16,10 +16,10 @@ HAL_StatusTypeDef Accelerometer::init(I2C_HandleTypeDef* hi2c, const Config& con
 
   if(current_num_init_>=MAX_NUM_INIT && ret_init!=HAL_OK)
   {
-	  return ret_init;
+	  return false;
   }
 
-  return HAL_OK;
+  return true;
 
 }
 

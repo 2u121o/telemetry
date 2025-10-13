@@ -9,6 +9,8 @@ extern "C" {
 #include "GPS.hpp"
 #include "Accelerometer.hpp"
 
+#include "DataWriter.hpp"
+
 namespace telemetry
 {
 
@@ -21,6 +23,8 @@ class MainTask
 	private:
 		GPS gps_;
 		Accelerometer accelerometer_;
+
+		DataWriter data_writer_;
 };
 
 }//telemetry
