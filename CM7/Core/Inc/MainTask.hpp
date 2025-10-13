@@ -1,5 +1,9 @@
 #pragma once
 
+extern "C" {
+#include "i2c.h"
+}
+
 #include <iostream>
 
 #include "GPS.hpp"
