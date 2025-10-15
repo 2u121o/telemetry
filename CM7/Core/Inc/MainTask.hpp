@@ -25,6 +25,10 @@ class MainTask
 		Accelerometer accelerometer_;
 
 		DataWriter data_writer_;
+
+		bool is_registration_stopped = true;
+
+
 };
 
 }//telemetry

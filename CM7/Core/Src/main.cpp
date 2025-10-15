@@ -67,12 +67,14 @@ void UartRxCheck(UART_HandleTypeDef *huart, uint16_t Size);
 
 __IO uint32_t BspButtonState = BUTTON_RELEASED;
 
-void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
-{
-  if (GPIO_Pin == 13u) {
-    BSP_PB_Callback(BUTTON_USER);
-  }
-}
+
+
+//void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+//{
+//  if (GPIO_Pin == 13u) {
+//    BSP_PB_Callback(BUTTON_USER);
+//  }
+//}
 
 /**
   * @brief  The application entry point.
@@ -99,7 +101,8 @@ int main(void)
   /* MCU Configuration--------------------------------------------------------*/
 
   /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
-  HAL_Init();
+
+	HAL_Init();
 
   /* USER CODE BEGIN Init */
 
@@ -143,7 +146,7 @@ int main(void)
   HAL_Delay(100);
 
 
-
+  BSP_PB_Init(BUTTON_USER, BUTTON_MODE_EXTI);
 
   /* USER CODE END 2 */
 
@@ -183,6 +186,8 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+
+	  printf("done\r\n");
     /* USER CODE END WHILE */
 //	  nmea_poll_and_print();
     /* USER CODE BEGIN 3 */
@@ -371,13 +376,13 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
   * @param  Button Specifies the pressed button
   * @retval None
   */
-void BSP_PB_Callback(Button_TypeDef Button)
-{
-  if (Button == BUTTON_USER)
-  {
-    BspButtonState = BUTTON_PRESSED;
-  }
-}
+//void BSP_PB_Callback(Button_TypeDef Button)
+//{
+//  if (Button == BUTTON_USER)
+//  {
+//    BspButtonState = BUTTON_PRESSED;
+//  }
+//}
 
 /**
   * @brief  This function is executed in case of error occurrence.

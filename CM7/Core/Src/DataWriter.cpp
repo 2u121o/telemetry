@@ -30,21 +30,47 @@ bool DataWriter::init(const char* file_name, const char* header)
 	  if (fresult_ != FR_OK)
 	  {
 		f_mount(NULL, uesr_path_, 1);
+		 return false;
 	  }
 
-	  f_printf(&fil_, header);
-	  f_sync(&fil_);
+	  UINT bw;
+	  size_t hlen = strlen(header);
+	  fresult_ = f_write(&fil_, header, hlen, &bw);
+	  if (fresult_ != FR_OK || bw != hlen) {
+		  f_close(&fil_);
+		  f_mount(NULL, uesr_path_, 1);
+		  return false;
+	  }
+
+	  fresult_ = f_sync(&fil_);
+	  if (fresult_ != FR_OK) {
+		  f_close(&fil_);
+		  f_mount(NULL, uesr_path_, 1);
+		  return false;
+	  }
+
+	  lines_since_sync_ = 0;
 
 	  return true;
 }
 
 bool DataWriter::writeBatch(const char* data)
 {
-	f_printf(&fil_, "%s\r\n", data);
-	fresult_ = f_sync(&fil_);
-	if (fresult_ != FR_OK)
+	int n = snprintf(io_buf_, sizeof(io_buf_), "%s", data);
+	if (n <= 0 || n >= (int)sizeof(io_buf_)) return false;
+
+	size_t span = (n + 31) & ~((size_t)31);
+	SCB_CleanDCache_by_Addr((uint32_t*)io_buf_, span);
+
+	UINT bw;
+	fresult_ = f_write(&fil_, io_buf_, n, &bw);
+	if (fresult_ != FR_OK || bw != (UINT)n) return false;
+
+	if (++lines_since_sync_ >= KSYNCSEVERY)
 	{
-		return false;
+		fresult_ = f_sync(&fil_);
+		if (fresult_ != FR_OK) return false;
+		lines_since_sync_ = 0;
 	}
 	return true;
 
@@ -55,6 +81,7 @@ void DataWriter::close()
 	f_sync(&fil_);
 	f_close(&fil_);
 	f_mount(NULL, uesr_path_, 1);
+
 }
 
 
