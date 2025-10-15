@@ -18,7 +18,7 @@ void MainTask::run()
 {
 
 	MX_I2C1_Init();
-	HAL_Delay(100);
+//	HAL_Delay();
 	bool ret_init_acc = accelerometer_.init(&hi2c1);
 
 	char* file_name = "test";
