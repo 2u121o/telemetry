@@ -56,22 +56,34 @@ HAL_StatusTypeDef Accelerometer::internalInit()
 	  return (who == config_.WHO_AM_I_EXPECT) ? HAL_OK : HAL_ERROR;
 }
 
-HAL_StatusTypeDef Accelerometer::readData(float *ax, float *ay, float *az)
+HAL_StatusTypeDef Accelerometer::readData(IMUValues *imu_values)
 {
-	  if (!hi2c_ || !ax || !ay || !az) return HAL_ERROR;
+	  if (!hi2c_ || !imu_values) return HAL_ERROR;
 
-	  uint8_t raw[6];
-	  HAL_StatusTypeDef st = readBurst(config_.OUTX_L_A, raw, sizeof(raw));
-	  if (st != HAL_OK) return st;
+	  uint8_t a_raw[6];
+	  HAL_StatusTypeDef a_st = readBurst(config_.OUTX_L_A, a_raw, sizeof(a_raw));
+	  if (a_st != HAL_OK) return a_st;
 
-	  int16_t x = static_cast<int16_t>((raw[1] << 8) | raw[0]);
-	  int16_t y = static_cast<int16_t>((raw[3] << 8) | raw[2]);
-	  int16_t z = static_cast<int16_t>((raw[5] << 8) | raw[4]);
+	  int16_t ax = static_cast<int16_t>((a_raw[1] << 8) | a_raw[0]);
+	  int16_t ay = static_cast<int16_t>((a_raw[3] << 8) | a_raw[2]);
+	  int16_t az = static_cast<int16_t>((a_raw[5] << 8) | a_raw[4]);
+
+	  uint8_t g_raw[6];
+	  HAL_StatusTypeDef g_st = readBurst(config_.OUTX_L_G , g_raw, sizeof(g_raw));
+	  if (g_st != HAL_OK) return g_st;
+
+	  int16_t wx = (int16_t)((g_raw[1] << 8) | g_raw[0]);
+	  int16_t wy = (int16_t)((g_raw[3] << 8) | g_raw[2]);
+	  int16_t wz = (int16_t)((g_raw[5] << 8) | g_raw[4]);
 
 
-	  *ax = x * SCALING;
-	  *ay = y * SCALING;
-	  *az = z * SCALING;
+	  (*imu_values).ax = ax * SCALING;
+	  (*imu_values).ay = ay * SCALING;
+	  (*imu_values).az = az * SCALING;
+
+	  (*imu_values).wx = wx * GYRO_SCALING_RAD_S;
+	  (*imu_values).wy = wy * GYRO_SCALING_RAD_S;
+	  (*imu_values).wz = wz * GYRO_SCALING_RAD_S;
 
 	  return HAL_OK;
 }
