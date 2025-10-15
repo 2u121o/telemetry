@@ -18,7 +18,7 @@ struct Config {
    uint8_t OUTX_L_A         = 0x28;
 
    uint8_t CTRL3_C_CFG      = 0x44;
-   uint8_t CTRL1_XL_CFG     = 0x40;
+   uint8_t CTRL1_XL_CFG     = 0x44;
    uint8_t CTRL2_G_CFG      = 0x4C;
    uint8_t WHO_AM_I_EXPECT  = 0x6B;
  };
