@@ -22,7 +22,7 @@ void MainTask::run()
 	bool ret_init_acc = accelerometer_.init(&hi2c1);
 
 	char* file_name = "test";
-	char* header = "timestamp, ax, ay, az\r\n";
+	char* header = "timestamp, ax, ay, az, wx, wy, wz\r\n";
 	if(!data_writer_.init(file_name, header))
 	{
 
@@ -31,7 +31,8 @@ void MainTask::run()
 	is_registration_stopped = false;
 	char data[512];
 	uint32_t ts_ms;
-//	data_writer_.close();
+
+	IMUValues imu_values;
 	while(true)
 	{
 		if(is_registration_stopped) continue;
@@ -41,15 +42,16 @@ void MainTask::run()
 		float ay;
 		float az;
 
-		HAL_StatusTypeDef ret_read = accelerometer_.readData(&ax, &ay, &az);
+		HAL_StatusTypeDef ret_read = accelerometer_.readData(&imu_values);
 		if(ret_read != HAL_OK)
 		{
 //			printf("data not read\r\n");
 		}
 
 		int n = snprintf(data, sizeof(data),
-		                     "%lu,%.6f,%.6f,%.6f\r\n",
-		                     (unsigned long)ts_ms, (double)ax, (double)ay, (double)az);
+		                     "%lu,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f\r\n",
+		                     (unsigned long)ts_ms, (double)imu_values.ax, (double)imu_values.ay, (double)imu_values.az,
+							 	 	 	 	 	   (double)imu_values.wx, (double)imu_values.wy, (double)imu_values.wz);
 
 		data_writer_.writeBatch(data);
 		uint32_t notif = 0;
