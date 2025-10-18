@@ -67,7 +67,12 @@ void UartRxCheck(UART_HandleTypeDef *huart, uint16_t Size);
 
 __IO uint32_t BspButtonState = BUTTON_RELEASED;
 
-
+static void set_usart2_baud(uint32_t baud)
+{
+  huart2.Init.BaudRate = baud;
+  HAL_UART_DeInit(&huart2);
+  if (HAL_UART_Init(&huart2) != HAL_OK) { Error_Handler(); }
+}
 
 //void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 //{
@@ -144,6 +149,7 @@ int main(void)
   MX_FATFS_Init();
   MX_I2C1_Init();
   HAL_Delay(100);
+  set_usart2_baud(38400);
 
 
   BSP_PB_Init(BUTTON_USER, BUTTON_MODE_EXTI);
@@ -168,7 +174,7 @@ int main(void)
 
   telemetry::MainTask main_task;
 
-  const osThreadAttr_t tattr{ .name="MainTask", .stack_size=2048*4, .priority=osPriorityBelowNormal };
+  const osThreadAttr_t tattr{ .name="MainTask", .stack_size=2048*6, .priority=osPriorityBelowNormal };
   osThreadNew(telemetry::MainTask::start, &main_task, &tattr);
   /* USER CODE BEGIN BSP */
   /* -- Sample board code to switch on leds ---- */
