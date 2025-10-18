@@ -8,6 +8,11 @@ extern "C" {
 #include <string.h>
 }
 
+#include "ff.h"
+#include <cstdint>
+#include <cstring>
+#include <cstdio>
+
 
 namespace telemetry
 {
@@ -26,7 +31,7 @@ class DataWriter
 
 		alignas(32) char io_buf_[512];
 
-		char uesr_path_[4];
+		char user_path_[4] = {0};
 
 		 int current_num_init_ = 0;
 	    static constexpr int MAX_NUM_INIT = 100;

@@ -219,184 +219,184 @@ static void to_fixedN(char *dst, size_t n, double v, int dec){
 static void nmea_poll_and_print(void)
 {
 
-//	 static char line[128];
-//	  static uint16_t L = 0;
-//	  uint8_t b;
-//
-//	  while (rb_pop_byte(&b)) {
-//	    if (b == '\r') continue;
-//	    if (b == '\n') {
-//
-//	      line[L] = 0;
-//	      if (L >= 9 && line[0]=='$' && nmea_check_cs(line)) {
-//
-////	    	  gnss_log_write_line(line);
-//	    	  if (strstr(line, "GGA,")) {
-//	    		  g.t_gga_ms = now_ms();   // GGA fresca
-//	    	    char *p = line;
-//
-//	    	    // hhmmss
-//	    	    p = strchr(p, ','); if(!p) goto next; p++;
-//	    	    // salva l’ora
-//	    	    char *comma = strchr(p, ','); if(!comma) goto next;
-//	    	    *comma = 0;
-//	    	    strncpy(g.utc_hms, p, sizeof(g.utc_hms)-1);
-//	    	    g.utc_hms[sizeof(g.utc_hms)-1]=0;
-//	    	    p = comma+1;
-//
-//	    	    // lat
-//	    	        char *lat = p;
-//	    	        p = strchr(p, ','); if (!p) goto next; *p = 0; p++;    // chiudi lat, p ora punta a N/S
-//	    	        if (*p == 0 || *p == ',') goto next;                   // campo vuoto -> scarta
-//	    	        char hemiNS = *p;
-//	    	        p = strchr(p, ','); if (!p) goto next; p++;            // vai oltre N/S
-//
-//	    	        // lon
-//	    	        char *lon = p;
-//	    	        p = strchr(p, ','); if (!p) goto next; *p = 0; p++;    // chiudi lon, p ora punta a E/W
-//	    	        if (*p == 0 || *p == ',') goto next;
-//	    	        char hemiEW = *p;
-//	    	        p = strchr(p, ','); if (!p) goto next; p++;            // vai oltre E/W
-//
-//
-//	    	    // fix
-//	    	    g.fix = atoi(p);
-//	    	    p = strchr(p, ','); if(!p) goto next; p++;
-//
-//	    	    // sats
-//	    	    g.sats = atoi(p);
-//	    	    p = strchr(p, ','); if(!p) goto next; p++;
-//
-//	    	    // hdop
-//	    	    g.hdop = atof(p);
-//	    	    p = strchr(p, ','); if(!p) goto next; p++;
-//
-//	    	    // alt (m)
-//	    	    g.alt_m = atof(p);
-//
-//	    	    // converti lat/lon
-//	    	    double dlat=0, dlon=0;
-//	    	    if (nmea_parse_latlon(lat, hemiNS, &dlat, 1) &&
-//	    	        nmea_parse_latlon(lon, hemiEW, &dlon, 0)) {
-//	    	      g.lat = dlat; g.lon = dlon; g.have_ll = 1;
-//	    	    }
-//	    	    g.t_gga_ms = now_ms();
-////	    	    g.have_gga = 1;
-//	    	  }
-//
-//	    	  // --- RMC ---
-//	    	  else if (strstr(line, "RMC,")) {
-//
-//	    	    char *p = line;
-//
-//	    	    // hhmmss
-//	    	    p = strchr(p, ','); if(!p) goto next; p++;
-//	    	    char *comma = strchr(p, ','); if(!comma) goto next;
-//	    	    *comma = 0;
-//	    	    strncpy(g.utc_hms, p, sizeof(g.utc_hms)-1);
-//	    	    g.utc_hms[sizeof(g.utc_hms)-1]=0;
-//	    	    p = comma+1;
-//
-//	    	    // status
-//	    	    char status = *p;
-//	    	    p = strchr(p, ','); if(!p) goto next; p++;
-//
-//	    	    // lat, N/S
-//	    	    char *lat = p;
-//	    	    p = strchr(p, ','); if(!p) goto next; *p = 0; p++;
-//	    	    char hemiNS = *p;
-//	    	    p = strchr(p, ','); if(!p) goto next; p++;
-//
-//	    	    // lon, E/W
-//	    	    char *lon = p;
-//	    	    p = strchr(p, ','); if(!p) goto next; *p = 0; p++;
-//	    	    char hemiEW = *p;
-//	    	    p = strchr(p, ','); if(!p) goto next; p++;
-//
-//	    	    // speed (kn)
-//	    	    g.speed_kn = atof(p);
-//	    	    p = strchr(p, ','); if(!p) goto next; p++;
-//
-//	    	    // course (deg)
-//	    	    g.course_deg = atof(p);
-//	    	    p = strchr(p, ','); if(!p) goto next; p++;      // *** AVANZA OLTRE LA COURSE ***
-//
-//	    	    // date ddmmyy
-//	    	    char *date_start = p;
-//	    	    comma = strchr(p, ',');
-//	    	    if (comma) *comma = 0;
-//	    	    strncpy(g.date, date_start, sizeof(g.date)-1);
-//	    	    g.date[sizeof(g.date)-1] = 0;
-//	    	    g.t_rmc_ms  = now_ms();
-//	    	    g.have_date = (g.date[0] != 0);
-//
-//	    	    // aggiorna lat/lon da RMC (opzionale)
-//	    	    double dlat=0, dlon=0;
-//	    	    int ok_lat = nmea_parse_latlon(lat, hemiNS, &dlat, 1);
-//	    	    int ok_lon = nmea_parse_latlon(lon, hemiEW, &dlon, 0);
-//	    	    if (ok_lat && ok_lon) {
-//	    	      g.lat = dlat;
-//	    	      g.lon = dlon;
-//	    	      g.have_ll = 1;
-//	    	    }
-////	    	    g.have_rmc = (status=='A');
-//	    	  }
-//	    	  else if (strstr(line, "VTG,")) {
-//	    	    // $..VTG,course_t,T,course_m,M,speed_kn,N,speed_km,H,mode*CS
-//	    	    char *p = line;
-//	    	    // salto fino al primo campo dopo $..VTG,
-//	    	    p = strchr(p, ','); if(!p) goto next; p++;
-//
-//	    	    // course_t
-//	    	    if (*p != ',') g.course_deg = atof(p);
-//	    	    p = strchr(p, ','); if(!p) goto next; p++;  // T
-//	    	    p = strchr(p, ','); if(!p) goto next; p++;  // course_m
-//	    	    p = strchr(p, ','); if(!p) goto next; p++;  // M
-//
-//	    	    // speed_kn
-//	    	    if (*p != ',') g.speed_kn = atof(p);
-//	    	    p = strchr(p, ','); if(!p) goto next; p++;  // N
-//
-//	    	    g.t_vtg_ms = now_ms();
-//	    	  }
-//	      }
-//
-//	    	  const uint32_t MAX_AGE_MS = 1500;
-//	    	  // --- SCRITTURA CSV: SOLO quando hai GGA+RMC+LL+DATE ---
-//	    	  if (gnss_log_open && g.have_ll && g.have_date) {
-//	    	    if (g.t_gga_ms != g.last_logged_gga_ms) {       // GGA nuova
-//	    	      uint32_t t = now_ms();
-//
-//	    	      // Se non usi VTG puoi togliere il controllo su t_vtg_ms
-//	    	      uint8_t rmc_ok = (t - g.t_rmc_ms) <= MAX_AGE_MS;
-//	    	      uint8_t vtg_ok = (g.t_vtg_ms == 0) ? 1 : ((t - g.t_vtg_ms) <= MAX_AGE_MS);
-//
-//	    	      if (rmc_ok && vtg_ok) {
-//	    	        char slat[24], slon[24], shdop[16], salt[16], sspeed[16], scourse[16];
-//	    	        to_fixedN(slat,   sizeof(slat),   g.lat,        6);
-//	    	        to_fixedN(slon,   sizeof(slon),   g.lon,        6);
-//	    	        to_fixedN(shdop,  sizeof(shdop),  g.hdop,       2);
-//	    	        to_fixedN(salt,   sizeof(salt),   g.alt_m,      2);
-//	    	        to_fixedN(sspeed, sizeof(sspeed), g.speed_kn,   2);
-//	    	        to_fixedN(scourse,sizeof(scourse),g.course_deg, 2);
-//
-//	    	        f_printf(&f_gnss, "%s,%s,%s,%s,%d,%d,%s,%s,%s,%s\r\n",
-//	    	                 g.utc_hms, g.date, slat, slon, g.fix, g.sats,
-//	    	                 shdop, salt, sspeed, scourse);
-//
-//	    	        if (++gnss_flush_cnt >= 10) { f_sync(&f_gnss); gnss_flush_cnt = 0; }
-//	    	        g.last_logged_gga_ms = g.t_gga_ms;
-//	    	      }
-//	    	    }
-//	    	  }
-//
-//	    next:
-//	      L = 0;
-//	    } else {
-//	      if (L < sizeof(line)-1) line[L++] = (char)b;
-//	      else L = 0; // overflow -> reset riga
-//	    }
-//	  }
+	 static char line[128];
+	  static uint16_t L = 0;
+	  uint8_t b;
+
+	  while (rb_pop_byte(&b)) {
+	    if (b == '\r') continue;
+	    if (b == '\n') {
+
+	      line[L] = 0;
+	      if (L >= 9 && line[0]=='$' && nmea_check_cs(line)) {
+
+//	    	  gnss_log_write_line(line);
+	    	  if (strstr(line, "GGA,")) {
+	    		  g.t_gga_ms = now_ms();   // GGA fresca
+	    	    char *p = line;
+
+	    	    // hhmmss
+	    	    p = strchr(p, ','); if(!p) goto next; p++;
+	    	    // salva l’ora
+	    	    char *comma = strchr(p, ','); if(!comma) goto next;
+	    	    *comma = 0;
+	    	    strncpy(g.utc_hms, p, sizeof(g.utc_hms)-1);
+	    	    g.utc_hms[sizeof(g.utc_hms)-1]=0;
+	    	    p = comma+1;
+
+	    	    // lat
+	    	        char *lat = p;
+	    	        p = strchr(p, ','); if (!p) goto next; *p = 0; p++;    // chiudi lat, p ora punta a N/S
+	    	        if (*p == 0 || *p == ',') goto next;                   // campo vuoto -> scarta
+	    	        char hemiNS = *p;
+	    	        p = strchr(p, ','); if (!p) goto next; p++;            // vai oltre N/S
+
+	    	        // lon
+	    	        char *lon = p;
+	    	        p = strchr(p, ','); if (!p) goto next; *p = 0; p++;    // chiudi lon, p ora punta a E/W
+	    	        if (*p == 0 || *p == ',') goto next;
+	    	        char hemiEW = *p;
+	    	        p = strchr(p, ','); if (!p) goto next; p++;            // vai oltre E/W
+
+
+	    	    // fix
+	    	    g.fix = atoi(p);
+	    	    p = strchr(p, ','); if(!p) goto next; p++;
+
+	    	    // sats
+	    	    g.sats = atoi(p);
+	    	    p = strchr(p, ','); if(!p) goto next; p++;
+
+	    	    // hdop
+	    	    g.hdop = atof(p);
+	    	    p = strchr(p, ','); if(!p) goto next; p++;
+
+	    	    // alt (m)
+	    	    g.alt_m = atof(p);
+
+	    	    // converti lat/lon
+	    	    double dlat=0, dlon=0;
+	    	    if (nmea_parse_latlon(lat, hemiNS, &dlat, 1) &&
+	    	        nmea_parse_latlon(lon, hemiEW, &dlon, 0)) {
+	    	      g.lat = dlat; g.lon = dlon; g.have_ll = 1;
+	    	    }
+	    	    g.t_gga_ms = now_ms();
+//	    	    g.have_gga = 1;
+	    	  }
+
+	    	  // --- RMC ---
+	    	  else if (strstr(line, "RMC,")) {
+
+	    	    char *p = line;
+
+	    	    // hhmmss
+	    	    p = strchr(p, ','); if(!p) goto next; p++;
+	    	    char *comma = strchr(p, ','); if(!comma) goto next;
+	    	    *comma = 0;
+	    	    strncpy(g.utc_hms, p, sizeof(g.utc_hms)-1);
+	    	    g.utc_hms[sizeof(g.utc_hms)-1]=0;
+	    	    p = comma+1;
+
+	    	    // status
+	    	    char status = *p;
+	    	    p = strchr(p, ','); if(!p) goto next; p++;
+
+	    	    // lat, N/S
+	    	    char *lat = p;
+	    	    p = strchr(p, ','); if(!p) goto next; *p = 0; p++;
+	    	    char hemiNS = *p;
+	    	    p = strchr(p, ','); if(!p) goto next; p++;
+
+	    	    // lon, E/W
+	    	    char *lon = p;
+	    	    p = strchr(p, ','); if(!p) goto next; *p = 0; p++;
+	    	    char hemiEW = *p;
+	    	    p = strchr(p, ','); if(!p) goto next; p++;
+
+	    	    // speed (kn)
+	    	    g.speed_kn = atof(p);
+	    	    p = strchr(p, ','); if(!p) goto next; p++;
+
+	    	    // course (deg)
+	    	    g.course_deg = atof(p);
+	    	    p = strchr(p, ','); if(!p) goto next; p++;      // *** AVANZA OLTRE LA COURSE ***
+
+	    	    // date ddmmyy
+	    	    char *date_start = p;
+	    	    comma = strchr(p, ',');
+	    	    if (comma) *comma = 0;
+	    	    strncpy(g.date, date_start, sizeof(g.date)-1);
+	    	    g.date[sizeof(g.date)-1] = 0;
+	    	    g.t_rmc_ms  = now_ms();
+	    	    g.have_date = (g.date[0] != 0);
+
+	    	    // aggiorna lat/lon da RMC (opzionale)
+	    	    double dlat=0, dlon=0;
+	    	    int ok_lat = nmea_parse_latlon(lat, hemiNS, &dlat, 1);
+	    	    int ok_lon = nmea_parse_latlon(lon, hemiEW, &dlon, 0);
+	    	    if (ok_lat && ok_lon) {
+	    	      g.lat = dlat;
+	    	      g.lon = dlon;
+	    	      g.have_ll = 1;
+	    	    }
+//	    	    g.have_rmc = (status=='A');
+	    	  }
+	    	  else if (strstr(line, "VTG,")) {
+	    	    // $..VTG,course_t,T,course_m,M,speed_kn,N,speed_km,H,mode*CS
+	    	    char *p = line;
+	    	    // salto fino al primo campo dopo $..VTG,
+	    	    p = strchr(p, ','); if(!p) goto next; p++;
+
+	    	    // course_t
+	    	    if (*p != ',') g.course_deg = atof(p);
+	    	    p = strchr(p, ','); if(!p) goto next; p++;  // T
+	    	    p = strchr(p, ','); if(!p) goto next; p++;  // course_m
+	    	    p = strchr(p, ','); if(!p) goto next; p++;  // M
+
+	    	    // speed_kn
+	    	    if (*p != ',') g.speed_kn = atof(p);
+	    	    p = strchr(p, ','); if(!p) goto next; p++;  // N
+
+	    	    g.t_vtg_ms = now_ms();
+	    	  }
+	      }
+
+	    	  const uint32_t MAX_AGE_MS = 1500;
+	    	  // --- SCRITTURA CSV: SOLO quando hai GGA+RMC+LL+DATE ---
+	    	  if (gnss_log_open && g.have_ll && g.have_date) {
+	    	    if (g.t_gga_ms != g.last_logged_gga_ms) {       // GGA nuova
+	    	      uint32_t t = now_ms();
+
+	    	      // Se non usi VTG puoi togliere il controllo su t_vtg_ms
+	    	      uint8_t rmc_ok = (t - g.t_rmc_ms) <= MAX_AGE_MS;
+	    	      uint8_t vtg_ok = (g.t_vtg_ms == 0) ? 1 : ((t - g.t_vtg_ms) <= MAX_AGE_MS);
+
+	    	      if (rmc_ok && vtg_ok) {
+	    	        char slat[24], slon[24], shdop[16], salt[16], sspeed[16], scourse[16];
+	    	        to_fixedN(slat,   sizeof(slat),   g.lat,        6);
+	    	        to_fixedN(slon,   sizeof(slon),   g.lon,        6);
+	    	        to_fixedN(shdop,  sizeof(shdop),  g.hdop,       2);
+	    	        to_fixedN(salt,   sizeof(salt),   g.alt_m,      2);
+	    	        to_fixedN(sspeed, sizeof(sspeed), g.speed_kn,   2);
+	    	        to_fixedN(scourse,sizeof(scourse),g.course_deg, 2);
+
+	    	        f_printf(&f_gnss, "%s,%s,%s,%s,%d,%d,%s,%s,%s,%s\r\n",
+	    	                 g.utc_hms, g.date, slat, slon, g.fix, g.sats,
+	    	                 shdop, salt, sspeed, scourse);
+
+	    	        if (++gnss_flush_cnt >= 10) { f_sync(&f_gnss); gnss_flush_cnt = 0; }
+	    	        g.last_logged_gga_ms = g.t_gga_ms;
+	    	      }
+	    	    }
+	    	  }
+
+	    next:
+	      L = 0;
+	    } else {
+	      if (L < sizeof(line)-1) line[L++] = (char)b;
+	      else L = 0; // overflow -> reset riga
+	    }
+	  }
 
 }
 
@@ -825,136 +825,6 @@ static int to_fixed3(char *dst, size_t dstsz, float v) {
 
 
 
-
-static void IMUTask(void *argument)
-{
-//	  HAL_StatusTypeDef st = imu_write_u8(CTRL3_C, 0x01);
-//	  i2c_dbg("imu_reset", st);
-//	 HAL_Delay(100);                  // IMU power-up settle
-//	    i2c_scan();
-	if (imu_pick_addr()!=0) {
-	        printf("IMU non trovata\r\n");
-	    }
-
-	    printf("Init ISM330...\r\n");
-	    if (ism330_init() != HAL_OK) {
-	        printf("ISM330 init ERROR\r\n");
-	        Error_Handler();
-	    }
-	    printf("ISM330 OK\r\n");
-
-	    // --- SD / FS ---
-	    FATFS fs;
-	    FIL f;
-	    FRESULT fr;
-
-	    fr = f_mount(&fs, USERPath, 1);
-	    printf("f_mount -> %d\r\n", fr);
-	    if (fr != FR_OK) {
-	        printf("Mount fail, esco dal task\r\n");
-	        vTaskDelete(NULL);
-	    }
-
-	    fr = f_open(&f, "0:/accel.txt", FA_WRITE | FA_CREATE_ALWAYS);
-	    printf("f_open -> %d\r\n", fr);
-	    if (fr != FR_OK) {
-	        f_mount(NULL, USERPath, 1);
-	        vTaskDelete(NULL);
-	    }
-
-	    if (f_size(&f) == 0) {
-	        f_printf(&f, "time_ms,ax,ay,az\r\n");
-	        f_sync(&f);
-	    }
-
-	    printf("Logging... premi USER per fermare.\r\n");
-
-	    // per ridurre i flush
-	    int flush_cnt = 0;
-
-	    // (opzionale) LED verde acceso durante logging
-	    BSP_LED_On(LED_GREEN);
-
-	    for (;;)
-	    {
-	        // === Check pulsante per STOP ===
-	        if (BspButtonState == BUTTON_PRESSED) {
-
-				osDelay(30); // debounce
-				// aspetta rilascio: torna HIGH
-				while (BSP_PB_GetState(BUTTON_USER) == GPIO_PIN_RESET) {
-					osDelay(5);
-				}
-				BspButtonState = BUTTON_RELEASED;
-
-				printf("Stop richiesto: sync/close/unmount...\r\n");
-				f_sync(&f);
-				f_close(&f);
-				f_mount(NULL, USERPath, 1);
-				BSP_LED_Off(LED_GREEN);
-				printf("Registrazione fermata e file chiuso.\r\n");
-				vTaskDelete(NULL);
-
-	        }
-
-
-	        // === Lettura IMU ===
-	        float ax, ay, az;
-	        if (ism330_read_accel_ms2(&ax, &ay, &az) == HAL_OK) {
-
-	            // converti a interi in milli-(m/s^2) con arrotondamento
-	            int32_t ax_mms2 = (int32_t)(ax * 1000.0f + (ax >= 0 ? 0.5f : -0.5f));
-	            int32_t ay_mms2 = (int32_t)(ay * 1000.0f + (ay >= 0 ? 0.5f : -0.5f));
-	            int32_t az_mms2 = (int32_t)(az * 1000.0f + (az >= 0 ? 0.5f : -0.5f));
-
-	            // scrivi una riga CSV senza usare %f
-	            f_printf(&f, "%lu,%ld,%ld,%ld\r\n",
-	                     (unsigned long)HAL_GetTick(),
-	                     (long)ax_mms2, (long)ay_mms2, (long)az_mms2);
-
-	            if (++flush_cnt >= 10) {
-	                FRESULT frs = f_sync(&f);
-	                if (frs != FR_OK) {
-	                    printf("f_sync err=%d\r\n", frs);
-	                }
-	                flush_cnt = 0;
-	            }
-	        } else {
-	            printf("Read accel ERROR\r\n");
-	        }
-
-
-	        osDelay(100); // 10 Hz
-	    }
-
-	    // In pratica non si arriva qui, ma ok:
-	    f_close(&f);
-	    f_mount(NULL, USERPath, 1);
-	    BSP_LED_Off(LED_GREEN);
-}
-
-
-static const char *fr_str(FRESULT fr){
-  switch(fr){
-    case FR_OK: return "FR_OK";
-    case FR_DISK_ERR: return "FR_DISK_ERR";
-    case FR_INT_ERR: return "FR_INT_ERR";
-    case FR_NOT_READY: return "FR_NOT_READY";
-    case FR_NO_FILE: return "FR_NO_FILE";
-    case FR_NO_PATH: return "FR_NO_PATH";
-    case FR_INVALID_NAME: return "FR_INVALID_NAME";
-    case FR_DENIED: return "FR_DENIED";
-    case FR_EXIST: return "FR_EXIST";
-    case FR_INVALID_OBJECT: return "FR_INVALID_OBJECT";
-    case FR_WRITE_PROTECTED: return "FR_WRITE_PROTECTED";
-    case FR_INVALID_DRIVE: return "FR_INVALID_DRIVE";
-    case FR_NOT_ENABLED: return "FR_NOT_ENABLED";
-    case FR_NO_FILESYSTEM: return "FR_NO_FILESYSTEM";
-    case FR_MKFS_ABORTED: return "FR_MKFS_ABORTED";
-    case FR_TIMEOUT: return "FR_TIMEOUT";
-    default: return "FR_xxx";
-  }
-}
 
 
 

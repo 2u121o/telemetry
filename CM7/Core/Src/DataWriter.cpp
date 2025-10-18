@@ -1,5 +1,5 @@
 #include "DataWriter.hpp"
-
+extern "C" { extern char USERPath[4]; }
 
 namespace telemetry
 {
@@ -7,19 +7,27 @@ namespace telemetry
 
 bool DataWriter::init(const char* file_name, const char* header)
 {
-	char path[64];
-	int n = snprintf(path, sizeof(path), "0:/%s.txt", file_name);
+
+	if (!file_name || !*file_name || !header) return false;
+
+	  std::memset(user_path_, 0, sizeof(user_path_));
+	  std::strncpy(user_path_, USERPath, sizeof(user_path_) - 1);
+
+
+	fresult_ = f_mount(&fatfs_, user_path_, 1);
+    while(fresult_!=FR_OK && current_num_init_++<=MAX_NUM_INIT)
+    {
+	    fresult_ = f_mount(&fatfs_, user_path_, 1);
+    }
+
+	char path[64] = {0};
+	int n = snprintf(path, sizeof(path), "%s%s.TXT", user_path_, file_name);
 	if (n < 0 || (size_t)n >= sizeof(path))
 	{
+	    f_mount(nullptr, user_path_, 1);
 		return false;
 	}
 
-
-	 fresult_ = f_mount(&fatfs_, uesr_path_, 1);
-	  while(fresult_!=FR_OK && current_num_init_++<=MAX_NUM_INIT)
-	  {
-		  fresult_ = f_mount(&fatfs_, uesr_path_, 1);
-	  }
 
 	  if(current_num_init_>=MAX_NUM_INIT && fresult_!=FR_OK)
 	  {
@@ -29,7 +37,7 @@ bool DataWriter::init(const char* file_name, const char* header)
 	  fresult_ = f_open(&fil_, path, FA_WRITE | FA_CREATE_ALWAYS);
 	  if (fresult_ != FR_OK)
 	  {
-		f_mount(NULL, uesr_path_, 1);
+		f_mount(NULL, user_path_, 1);
 		 return false;
 	  }
 
@@ -38,14 +46,14 @@ bool DataWriter::init(const char* file_name, const char* header)
 	  fresult_ = f_write(&fil_, header, hlen, &bw);
 	  if (fresult_ != FR_OK || bw != hlen) {
 		  f_close(&fil_);
-		  f_mount(NULL, uesr_path_, 1);
+		  f_mount(NULL, user_path_, 1);
 		  return false;
 	  }
 
 	  fresult_ = f_sync(&fil_);
 	  if (fresult_ != FR_OK) {
 		  f_close(&fil_);
-		  f_mount(NULL, uesr_path_, 1);
+		  f_mount(NULL, user_path_, 1);
 		  return false;
 	  }
 
@@ -80,7 +88,7 @@ void DataWriter::close()
 {
 	f_sync(&fil_);
 	f_close(&fil_);
-	f_mount(NULL, uesr_path_, 1);
+	f_mount(NULL, user_path_, 1);
 
 }
 

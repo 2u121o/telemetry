@@ -24,9 +24,13 @@ class MainTask
 		GPS gps_;
 		Accelerometer accelerometer_;
 
+		GPSData gps_data_;
+
 		DataWriter data_writer_;
 
-		bool is_registration_stopped = true;
+		char data[512];
+
+//		volatile bool is_registration_stopped = true;
 
 
 };

@@ -176,6 +176,7 @@ void HAL_UART_MspInit(UART_HandleTypeDef* uartHandle)
     hdma_usart2_rx.Init.Mode = DMA_CIRCULAR;
     hdma_usart2_rx.Init.Priority = DMA_PRIORITY_LOW;
     hdma_usart2_rx.Init.FIFOMode = DMA_FIFOMODE_DISABLE;
+    __HAL_LINKDMA(&huart2, hdmarx, hdma_usart2_rx);
     if (HAL_DMA_Init(&hdma_usart2_rx) != HAL_OK) { Error_Handler(); }
 
     /* COLLEGAMENTO FONDAMENTALE */
