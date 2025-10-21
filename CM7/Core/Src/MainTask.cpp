@@ -23,11 +23,13 @@ void MainTask::run()
 	gps_.init();
 
 	char* file_name = "logaccgps";
-	char* header = "timestamp, ax, ay, az, wx, wy, wz, lat, lon, alt_m\r\n";
+	char* header = "timestamp, ax, ay, az, wx, wy, wz, lat, lon, alt_m, travel_r_v\r\n";
 	if(!data_writer_.init(file_name, header))
 	{
 
 	}
+
+	ADC3_PC2C_INP0_Init();
 
 	bool is_registration_stopped = false;
 
@@ -48,12 +50,12 @@ void MainTask::run()
 
 		gps_.readData(&gps_data_);
 
-
+	    float volt_travel_rear = ADC3_Read_V();
 		int n = snprintf(data, sizeof(data),
-		                     "%lu,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.14f,%.14f,%.6f\r\n",
+		                     "%lu,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.14f,%.14f,%.6f,%.6f\r\n",
 		                     (unsigned long)ts_ms, (double)imu_values.ax, (double)imu_values.ay, (double)imu_values.az,
 							 	 	 	 	 	   (double)imu_values.wx, (double)imu_values.wy, (double)imu_values.wz,
-												   (double)gps_data_.lat, (double)gps_data_.lon, (double)gps_data_.alt_m);
+												   (double)gps_data_.lat, (double)gps_data_.lon, (double)gps_data_.alt_m, volt_travel_rear);
 
 		if (n > 0) data_writer_.writeBatch(data);
 		uint32_t notif = 0;

@@ -33,6 +33,7 @@ extern "C" {
 #include "MainTask.hpp"
 
 
+
 /* USER CODE END 0 */
 
 #ifndef HSEM_ID_0
@@ -152,6 +153,7 @@ int main(void)
   set_usart2_baud(38400);
 
 
+
   BSP_PB_Init(BUTTON_USER, BUTTON_MODE_EXTI);
 
   /* USER CODE END 2 */
@@ -193,7 +195,6 @@ int main(void)
   while (1)
   {
 
-	  printf("done\r\n");
     /* USER CODE END WHILE */
 //	  nmea_poll_and_print();
     /* USER CODE BEGIN 3 */

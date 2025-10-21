@@ -11,6 +11,8 @@ extern "C" {
 
 #include "DataWriter.hpp"
 
+#include "adc3_init.hpp"
+
 namespace telemetry
 {
 
