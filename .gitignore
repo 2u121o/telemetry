@@ -1,7 +1,5 @@
-<<<<<<< HEAD
 # Prerequisites
 *.d
-=======
 # Log files
 *.log
 
@@ -15,7 +13,6 @@ Thumbs.db
 *.app
 *.exe
 *.war
->>>>>>> 9eba6ef (Initial Commit)
 
 # Compiled Object files
 *.slo
@@ -27,15 +24,12 @@ Thumbs.db
 *.gch
 *.pch
 
-<<<<<<< HEAD
 # Linker files
 *.ilk
 
 # Debugger Files
 *.pdb
 
-=======
->>>>>>> 9eba6ef (Initial Commit)
 # Compiled Dynamic libraries
 *.so
 *.dylib
@@ -56,10 +50,8 @@ Thumbs.db
 *.out
 *.app
 
-<<<<<<< HEAD
 # debug information files
 *.dwo
-=======
 # Build
 build/**
 Build/**
@@ -75,4 +67,39 @@ output/**
 /CM7/.settings/**
 /CM7/Debug/**
 *.launch
->>>>>>> 9eba6ef (Initial Commit)
+
+
+# Virtual env
+.venv/
+venv/
+env/
+
+# Python cache & build
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+.build/
+build/
+dist/
+.eggs/
+*.egg-info/
+
+# Tool caches
+.pytest_cache/
+.mypy_cache/
+.pyright/
+.coverage*
+htmlcov/
+.cache/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Env files (se li usi)
+.env
+.env.*
