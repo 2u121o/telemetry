@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Telemetry</title>
+    <link rel="stylesheet" href="assets/style.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+          <button id="closeSidebar" class="icon-btn" aria-label="Close menu">✕</button>
+          <div class="brand">📡 telemetry</div>
+        </div>
+        <nav class="menu" role="navigation" aria-label="Sections">
+          <a href="#/sessions" class="menu-item" data-route="sessions" aria-current="page"><span>Sessions</span></a>
+          <a href="#/device" class="menu-item" data-route="device"><span>Device</span></a>
+          <a href="#/settings" class="menu-item" data-route="settings"><span>Settings</span></a>
+        </nav>
+        <div class="sidebar-footer">
+          <button id="btnHealth" class="primary-btn">Ping API</button>
+        </div>
+      </aside>
+
+      <div class="main">
+        <header class="topbar">
+          <button id="openSidebar" class="icon-btn" aria-label="Open menu">☰</button>
+          <div class="title" id="pageTitle">Sessions</div>
+          <div class="spacer"></div>
+        </header>
+
+        <main id="view" class="view"></main>
+
+        <footer class="footer">
+          <span>© 2025 Telemetry</span>
+        </footer>
+      </div>
+    </div>
+
+    <script type="module" src="assets/main.js"></script>
+  </body>
+</html>
