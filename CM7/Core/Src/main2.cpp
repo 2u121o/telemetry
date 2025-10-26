@@ -17,6 +17,7 @@
   */
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
+extern "C" {
 #include "main.h"
 #include "cmsis_os.h"
 #include "dma.h"
@@ -25,11 +26,15 @@
 #include "spi.h"
 #include "usart.h"
 #include "gpio.h"
+#include <stdio.h>
+#include <stdlib.h>
+}
+
+#include "MainTask.hpp"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include <stdio.h>
-#include <stdlib.h>
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -158,39 +163,39 @@ static int nmea_check_cs(const char *s){
 static int nmea_parse_latlon(const char *field, char hemi, double *deg_out, int is_lat)
 {
 
-    if (!field || !*field) return 0;
-
-    // Copia in buffer locale e tronca eventuali spazi
-    char buf[24];
-    size_t L = strlen(field);
-    if (L >= sizeof(buf)) L = sizeof(buf)-1;
-    memcpy(buf, field, L);
-    buf[L] = 0;
-
-    // Aspettiamo "ddmm.mmmm" (lat) o "dddmm.mmmm" (lon)
-    int gdigits = is_lat ? 2 : 3;
-    for (int i = 0; i < gdigits; i++) {
-        if (buf[i] < '0' || buf[i] > '9') return 0; // gradi non numerici
-    }
-    if (buf[gdigits] == 0) return 0;                // manca la parte minuti
-
-    // Estraggo gradi
-    char gbuf[4] = {0};
-    memcpy(gbuf, buf, gdigits);                     // 2 o 3 cifre
-    double deg = (double)atoi(gbuf);
-
-    // Minuti (mm.mmmm)
-    double min = strtod(buf + gdigits, '\0');       // es. "51.46361"
-    if (min < 0 || min >= 60.0)
-	{
-		return 0;
-	}
-
-    double dec = deg + (min / 60.0);
-    if (hemi == 'S' || hemi == 'W') dec = -dec;
-
-    *deg_out = dec;
-    return 1;
+//    if (!field || !*field) return 0;
+//
+//    // Copia in buffer locale e tronca eventuali spazi
+//    char buf[24];
+//    size_t L = strlen(field);
+//    if (L >= sizeof(buf)) L = sizeof(buf)-1;
+//    memcpy(buf, field, L);
+//    buf[L] = 0;
+//
+//    // Aspettiamo "ddmm.mmmm" (lat) o "dddmm.mmmm" (lon)
+//    int gdigits = is_lat ? 2 : 3;
+//    for (int i = 0; i < gdigits; i++) {
+//        if (buf[i] < '0' || buf[i] > '9') return 0; // gradi non numerici
+//    }
+//    if (buf[gdigits] == 0) return 0;                // manca la parte minuti
+//
+//    // Estraggo gradi
+//    char gbuf[4] = {0};
+//    memcpy(gbuf, buf, gdigits);                     // 2 o 3 cifre
+//    double deg = (double)atoi(gbuf);
+//
+//    // Minuti (mm.mmmm)
+//    double min = strtod(buf + gdigits, '\0');       // es. "51.46361"
+//    if (min < 0 || min >= 60.0)
+//	{
+//		return 0;
+//	}
+//
+//    double dec = deg + (min / 60.0);
+//    if (hemi == 'S' || hemi == 'W') dec = -dec;
+//
+//    *deg_out = dec;
+//    return 1;
 }
 
 
@@ -821,136 +826,6 @@ static int to_fixed3(char *dst, size_t dstsz, float v) {
 
 
 
-static void IMUTask(void *argument)
-{
-//	  HAL_StatusTypeDef st = imu_write_u8(CTRL3_C, 0x01);
-//	  i2c_dbg("imu_reset", st);
-//	 HAL_Delay(100);                  // IMU power-up settle
-//	    i2c_scan();
-	if (imu_pick_addr()!=0) {
-	        printf("IMU non trovata\r\n");
-	    }
-
-	    printf("Init ISM330...\r\n");
-	    if (ism330_init() != HAL_OK) {
-	        printf("ISM330 init ERROR\r\n");
-	        Error_Handler();
-	    }
-	    printf("ISM330 OK\r\n");
-
-	    // --- SD / FS ---
-	    FATFS fs;
-	    FIL f;
-	    FRESULT fr;
-
-	    fr = f_mount(&fs, USERPath, 1);
-	    printf("f_mount -> %d\r\n", fr);
-	    if (fr != FR_OK) {
-	        printf("Mount fail, esco dal task\r\n");
-	        vTaskDelete(NULL);
-	    }
-
-	    fr = f_open(&f, "0:/accel.txt", FA_WRITE | FA_CREATE_ALWAYS);
-	    printf("f_open -> %d\r\n", fr);
-	    if (fr != FR_OK) {
-	        f_mount(NULL, USERPath, 1);
-	        vTaskDelete(NULL);
-	    }
-
-	    if (f_size(&f) == 0) {
-	        f_printf(&f, "time_ms,ax,ay,az\r\n");
-	        f_sync(&f);
-	    }
-
-	    printf("Logging... premi USER per fermare.\r\n");
-
-	    // per ridurre i flush
-	    int flush_cnt = 0;
-
-	    // (opzionale) LED verde acceso durante logging
-	    BSP_LED_On(LED_GREEN);
-
-	    for (;;)
-	    {
-	        // === Check pulsante per STOP ===
-	        if (BspButtonState == BUTTON_PRESSED) {
-
-				osDelay(30); // debounce
-				// aspetta rilascio: torna HIGH
-				while (BSP_PB_GetState(BUTTON_USER) == GPIO_PIN_RESET) {
-					osDelay(5);
-				}
-				BspButtonState = BUTTON_RELEASED;
-
-				printf("Stop richiesto: sync/close/unmount...\r\n");
-				f_sync(&f);
-				f_close(&f);
-				f_mount(NULL, USERPath, 1);
-				BSP_LED_Off(LED_GREEN);
-				printf("Registrazione fermata e file chiuso.\r\n");
-				vTaskDelete(NULL);
-
-	        }
-
-
-	        // === Lettura IMU ===
-	        float ax, ay, az;
-	        if (ism330_read_accel_ms2(&ax, &ay, &az) == HAL_OK) {
-
-	            // converti a interi in milli-(m/s^2) con arrotondamento
-	            int32_t ax_mms2 = (int32_t)(ax * 1000.0f + (ax >= 0 ? 0.5f : -0.5f));
-	            int32_t ay_mms2 = (int32_t)(ay * 1000.0f + (ay >= 0 ? 0.5f : -0.5f));
-	            int32_t az_mms2 = (int32_t)(az * 1000.0f + (az >= 0 ? 0.5f : -0.5f));
-
-	            // scrivi una riga CSV senza usare %f
-	            f_printf(&f, "%lu,%ld,%ld,%ld\r\n",
-	                     (unsigned long)HAL_GetTick(),
-	                     (long)ax_mms2, (long)ay_mms2, (long)az_mms2);
-
-	            if (++flush_cnt >= 10) {
-	                FRESULT frs = f_sync(&f);
-	                if (frs != FR_OK) {
-	                    printf("f_sync err=%d\r\n", frs);
-	                }
-	                flush_cnt = 0;
-	            }
-	        } else {
-	            printf("Read accel ERROR\r\n");
-	        }
-
-
-	        osDelay(100); // 10 Hz
-	    }
-
-	    // In pratica non si arriva qui, ma ok:
-	    f_close(&f);
-	    f_mount(NULL, USERPath, 1);
-	    BSP_LED_Off(LED_GREEN);
-}
-
-
-static const char *fr_str(FRESULT fr){
-  switch(fr){
-    case FR_OK: return "FR_OK";
-    case FR_DISK_ERR: return "FR_DISK_ERR";
-    case FR_INT_ERR: return "FR_INT_ERR";
-    case FR_NOT_READY: return "FR_NOT_READY";
-    case FR_NO_FILE: return "FR_NO_FILE";
-    case FR_NO_PATH: return "FR_NO_PATH";
-    case FR_INVALID_NAME: return "FR_INVALID_NAME";
-    case FR_DENIED: return "FR_DENIED";
-    case FR_EXIST: return "FR_EXIST";
-    case FR_INVALID_OBJECT: return "FR_INVALID_OBJECT";
-    case FR_WRITE_PROTECTED: return "FR_WRITE_PROTECTED";
-    case FR_INVALID_DRIVE: return "FR_INVALID_DRIVE";
-    case FR_NOT_ENABLED: return "FR_NOT_ENABLED";
-    case FR_NO_FILESYSTEM: return "FR_NO_FILESYSTEM";
-    case FR_MKFS_ABORTED: return "FR_MKFS_ABORTED";
-    case FR_TIMEOUT: return "FR_TIMEOUT";
-    default: return "FR_xxx";
-  }
-}
-
 
 
 
@@ -1089,7 +964,10 @@ int main(void)
 
 //  GNSS_StartReception();
 
-
+ telemetry::MainTask main_task;
+ main_task.configure();
+ main_task.start();
+ main_task.run();
 
   /* USER CODE END 2 */
 
@@ -1168,7 +1046,7 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
 
 	      // --- SOLO DEBUG: copia i primi 64 byte del chunk ---
 	      uint16_t m = (Size > sizeof(dbg_last_bytes)) ? sizeof(dbg_last_bytes) : Size;
-	      memcpy((void*)dbg_last_bytes, nmea_dma_buf, m);
+//	     h memcpy((void*)dbg_last_bytes, nmea_dma_buf, m);
 	      dbg_last_size  = m;
 	      dbg_rx_events++;
 	    }
