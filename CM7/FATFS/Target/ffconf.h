@@ -30,6 +30,8 @@
 / Function Configurations
 /-----------------------------------------------------------------------------*/
 
+
+
 #define _FS_READONLY         0      /* 0:Read/Write or 1:Read only */
 /* This option switches read-only configuration. (0:Read/Write or 1:Read-only)
 /  Read-only configuration removes writing API functions, f_write(), f_sync(),
@@ -108,8 +110,11 @@
 /   949 - Korean (DBCS)
 /   950 - Traditional Chinese (DBCS)
 */
-
-#define _USE_LFN     0    /* 0 to 3 */
+#define FF_USE_LFN      2      // 0=off, 1=caller buffer, 2=static buffer interno, 3=malloc
+#define FF_MAX_LFN      255
+#define FF_LFN_UNICODE  0      // 0=ASCII/OEM, 1=UTF16; lascia 0 a meno che non ti serva Unicode
+#define FF_CODE_PAGE    437
+#define _USE_LFN     2    /* 0 to 3 */
 #define _MAX_LFN     255  /* Maximum LFN length to handle (12 to 255) */
 /* The _USE_LFN switches the support of long file name (LFN).
 /
