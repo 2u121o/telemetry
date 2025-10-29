@@ -36,18 +36,18 @@ export function createRouter({ viewEl, setActive }) {
 
       // Mount new route
       if (route.mount) {
-        console.log('Mounting new route:', route.name);
+        console.log('Mounting new route:', route.fragment);
         currentRoute = route;
         await route.mount(viewEl);
       } else {
-        console.warn('No mount function for route:', route.name);
+        console.warn('No mount function for route:', route.fragment);
         currentRoute = null;
       }
 
       // Update active state
       if (setActive) {
-        console.log('Setting active state for:', route.name);
-        setActive(route.name);
+        console.log('Setting active state for:', route.fragment);
+        setActive(route.fragment);
       }
     } catch (error) {
       console.error('Navigation error:', error);

@@ -37,12 +37,13 @@ export async function mount(root){
     renderRows(tbody,data);
     console.log('Rows rendered');
     
-    const buttons = $$('#tblSessions button', root);
-    console.log('Found buttons:', buttons.length);
-    
-    buttons.forEach(btn=>{
-      btn.addEventListener('click',()=>alert(`Open session ${btn.dataset.id}`));
+    tbody.addEventListener('click', (e) => {
+    const btn = e.target.closest('.icon-btn');
+    if (!btn || !tbody.contains(btn)) return; 
+      const id = btn.dataset.id;
+      alert(`Open session ${id}`);
     });
+
     console.log('Button listeners added');
   }catch(e){
     console.error('Error loading sessions:', e);
