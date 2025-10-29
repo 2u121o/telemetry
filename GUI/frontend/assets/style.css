@@ -61,6 +61,22 @@ p { color: var(--muted); }
 }
 .icon-btn:hover { background: var(--panel); }
 
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between; 
+  gap: 1rem;
+  margin-bottom: .5rem;
+}
+.btn {
+  padding: .5rem .9rem;
+  border: 1px solid #ddd;
+  background: #f7f7f7;
+  border-radius: .5rem;
+  cursor: pointer;
+}
+.btn:hover { background: #eee; }
+
 @media (max-width: 860px) {
   .sidebar {
     position: fixed; left: 0; top:0; bottom:0;
