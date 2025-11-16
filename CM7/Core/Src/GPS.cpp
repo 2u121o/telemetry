@@ -21,7 +21,12 @@ bool GPS::init()
 {
   s_gps_instance = this;
 
-  GNSSDMAStart();
+  bool is_gnss_dmas_started = GNSSDMAStart();
+  while(!is_gnss_dmas_started && num_tentative_start_ < NUM_MAX_TENTATIVE)
+  {
+	  is_gnss_dmas_started = GNSSDMAStart();
+	  ++num_tentative_start_;
+  }
 
   HAL_UART_Transmit(&huart2, const_cast<uint8_t*>(config_gps_.UBX_CFG_RATE_4HZ),
                     sizeof(config_gps_.UBX_CFG_RATE_4HZ), 100);
@@ -47,13 +52,16 @@ bool GPS::init()
   return true;
 }
 
-void GPS::GNSSDMAStart()
+bool GPS::GNSSDMAStart()
 {
-	if (huart2.hdmarx == nullptr) return;
+	if (huart2.hdmarx == nullptr) return false;
 
 	  // stop RX pendente e DMA
 	  HAL_UART_AbortReceive(&huart2);
-	  if (huart2.hdmarx) HAL_DMA_Abort(huart2.hdmarx);
+	  if (huart2.hdmarx)
+	  {
+		  HAL_DMA_Abort(huart2.hdmarx);
+	  }
 
 	  // disabilita UART, pulisci errori, flush RX, riabilita
 	  __HAL_UART_DISABLE(&huart2);
@@ -75,14 +83,15 @@ void GPS::GNSSDMAStart()
 	  // cache maintenance se RAM cacheable
 	  uintptr_t addr = reinterpret_cast<uintptr_t>(nmea_dma_buf_);
 	  uintptr_t base = addr & ~0x1FUL;
-	  uint32_t  size = ((NMEA_DMA_BUF_SZ + 31U) & ~31U);
+	  uint32_t size = NMEA_DMA_BUF_SZ + (addr - base);
+	  size = (size + 31U) & ~31U;
 	  SCB_CleanInvalidateDCache_by_Addr(reinterpret_cast<uint32_t*>(base), size);
 
 	  // avvio RX ToIdle (USART2 RX DMA deve essere in DMA_NORMAL e linkato)
 	  HAL_StatusTypeDef s = HAL_UARTEx_ReceiveToIdle_DMA(&huart2, nmea_dma_buf_, NMEA_DMA_BUF_SZ);
 	  if (s != HAL_OK) {
 	    // se ancora HAL_ERROR, non è più ORE: è DMA/IRQ/Request/Link
-	    return;
+	    return false;
 	  }
 //	  if (huart2.hdmarx) __HAL_DMA_DISABLE_IT(huart2.hdmarx, DMA_IT_HT);
 	  if (huart2.hdmarx)
@@ -91,6 +100,7 @@ void GPS::GNSSDMAStart()
 	  }
 
 	  start_ms_ = HAL_GetTick();
+	  return true;
 }
 
 void GPS::readData(GPSData* out_data)
