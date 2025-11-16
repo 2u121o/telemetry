@@ -27,6 +27,7 @@ class MainTask
 		Accelerometer accelerometer_;
 
 		GPSData gps_data_;
+		IMUValues imu_values_;
 
 		DataWriter data_writer_;
 
