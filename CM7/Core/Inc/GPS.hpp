@@ -89,8 +89,11 @@ private:
   volatile uint16_t dbg_last_size_ = 0;
   volatile uint32_t dbg_rx_events_ = 0;
 
+  int num_tentative_start_ = 0;
+  const int NUM_MAX_TENTATIVE = 10;
+
   // HAL helpers
-  void GNSSDMAStart();
+  bool GNSSDMAStart();
 
   // NMEA helpers
   void   nmeaPoll();

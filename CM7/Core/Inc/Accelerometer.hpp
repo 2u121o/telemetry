@@ -27,13 +27,13 @@ struct Config {
 
 struct IMUValues
 {
-	float ax;
-	float ay;
-	float az;
+	float ax = 0.0;
+	float ay = 0.0;;
+	float az = 0.0;;
 
-	float wx;
-	float wy;
-	float wz;
+	float wx = 0.0;;
+	float wy = 0.0;;
+	float wz = 0.0;;
 };
 
 class Accelerometer
