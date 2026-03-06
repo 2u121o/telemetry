@@ -11,8 +11,6 @@ static int g_is_sdhc = 0;
 static inline void SD_CS_L(void){ HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4, GPIO_PIN_RESET); }
 static inline void SD_CS_H(void){ HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4, GPIO_PIN_SET); }
 
-static int s_inited = 0;
-
 static void sd_spi_set_low_speed(void)
 {
     HAL_SPI_DeInit(&hspi1);
@@ -123,7 +121,7 @@ int sd_init(void)
   do {
 	r1 = sd_acmd41(1);
 	if (r1 == 0x00) break;
-//	HAL_Delay(2);
+	HAL_Delay(2);
   } while (tmo--);
   printf("[SD] ACMD41 R1=0x%02X\r\n", r1);
   if (r1 != 0x00) {
