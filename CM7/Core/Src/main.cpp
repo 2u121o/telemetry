@@ -180,9 +180,9 @@ int main(void)
   osThreadNew(telemetry::MainTask::start, &main_task, &tattr);
   /* USER CODE BEGIN BSP */
   /* -- Sample board code to switch on leds ---- */
-  BSP_LED_On(LED_GREEN);
-  BSP_LED_On(LED_YELLOW);
-  BSP_LED_On(LED_RED);
+//  BSP_LED_On(LED_GREEN);
+//  BSP_LED_On(LED_YELLOW);
+//  BSP_LED_On(LED_RED);
   /* USER CODE END BSP */
 
   /* Start scheduler */

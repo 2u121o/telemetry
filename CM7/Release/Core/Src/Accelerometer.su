@@ -1,0 +1,6 @@
+../Core/Src/Accelerometer.cpp:91:19:HAL_StatusTypeDef telemetry::Accelerometer::writeReg(uint8_t, uint8_t)	32	static
+../Core/Src/Accelerometer.cpp:97:19:HAL_StatusTypeDef telemetry::Accelerometer::readReg(uint8_t, uint8_t*)	24	static
+../Core/Src/Accelerometer.cpp:26:19:HAL_StatusTypeDef telemetry::Accelerometer::internalInit()	16	static
+../Core/Src/Accelerometer.cpp:6:6:bool telemetry::Accelerometer::init(I2C_HandleTypeDef*, const telemetry::Config&)	8	static
+../Core/Src/Accelerometer.cpp:103:19:HAL_StatusTypeDef telemetry::Accelerometer::readBurst(uint8_t, uint8_t*, uint16_t)	24	static
+../Core/Src/Accelerometer.cpp:59:19:HAL_StatusTypeDef telemetry::Accelerometer::readData(telemetry::IMUValues*)	40	static

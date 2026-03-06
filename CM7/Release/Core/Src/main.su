@@ -1,0 +1,9 @@
+../Core/Inc/GPS.hpp:12:8:constexpr telemetry::ConfigGPS::ConfigGPS()	8	static
+../Core/Inc/MainTask.hpp:19:7:telemetry::MainTask::MainTask()	8	static
+../Core/Src/main.cpp:299:6:void UserDataTreatment(UART_HandleTypeDef*, uint8_t*, uint16_t)	12	static
+../Core/Src/main.cpp:348:1:int __io_putchar(int)	16	static
+../Core/Src/main.cpp:367:6:void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef*)	0	static
+../Core/Src/main.cpp:398:6:void Error_Handler()	8	static
+../Core/Src/main.cpp:212:6:void SystemClock_Config()	128	static
+../Core/Src/main.cpp:276:6:void PrintInfo(UART_HandleTypeDef*, uint8_t*, uint16_t)	8	static
+../Core/Src/main.cpp:89:5:int main()	3784	static

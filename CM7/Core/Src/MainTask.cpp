@@ -38,11 +38,11 @@ void MainTask::run()
 	bool is_registration_stopped = false;
 
 	uint32_t ts_ms;
-
+	BSP_LED_On(LED_GREEN);
 	while(true)
 	{
 		if(is_registration_stopped) continue;
-
+		BSP_LED_On(LED_YELLOW);
 		ts_ms = HAL_GetTick();
 
 		HAL_StatusTypeDef ret_read = accelerometer_.readData(&imu_values_);
@@ -69,6 +69,7 @@ void MainTask::run()
 				data_writer_.close();
 				is_registration_stopped = true;
 				ts_ms = 0;
+				BSP_LED_On(LED_RED);
 			}
 		}
 

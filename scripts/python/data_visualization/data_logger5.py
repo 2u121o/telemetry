@@ -3,7 +3,8 @@ from tkinter import ttk, filedialog, messagebox
 
 import pandas as pd
 import numpy as np
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
+
 from matplotlib.figure import Figure
 
 import os
@@ -170,9 +171,9 @@ class XYPlotVisualizer(tk.Frame):
         # Voltage -> travel tool UI variables
         self.v_input_var = tk.StringVar()
         self.v_output_var = tk.StringVar(value="travel_mm")
-        self.v_travel_var = tk.StringVar(value="160")   # sensor travel in mm
+        self.v_travel_var = tk.StringVar(value="70")   # sensor travel in mm
         self.v_min_var = tk.StringVar(value="0.0")
-        self.v_max_var = tk.StringVar(value="5.0")
+        self.v_max_var = tk.StringVar(value="3.3")
 
         self._build_ui()
 
@@ -182,6 +183,9 @@ class XYPlotVisualizer(tk.Frame):
         self.canvas = FigureCanvasTkAgg(self.fig, master=self.plot_frame)
         self.canvas_widget = self.canvas.get_tk_widget()
         self.canvas_widget.pack(fill=tk.BOTH, expand=True)
+        self.toolbar = NavigationToolbar2Tk(self.canvas, self.plot_frame)
+        self.toolbar.update()
+        self.toolbar.pack(side=tk.TOP, fill=tk.X)
 
         self.cursor_line = None
 
@@ -465,8 +469,9 @@ class XYPlotVisualizer(tk.Frame):
         Draw or move a vertical line at the given X (timestamp) position.
         """
         ymin, ymax = self.ax.get_ylim()
+        ymin, ymax = -1000000, 1000000
         if ymin == ymax:
-            ymin, ymax = 0, 1
+            ymin, ymax = -1000000, 1000000
 
         if self.cursor_line is None:
             self.cursor_line = self.ax.axvline(ts_value, color="red", linestyle="--")
