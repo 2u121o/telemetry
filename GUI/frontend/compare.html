@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Bike Telemetry — Confronto Runs</title>
+
+  <!-- Plotly.js for charts -->
+  <script src="https://cdn.plot.ly/plotly-2.35.0.min.js" charset="utf-8"></script>
+
+  <!-- Leaflet for maps -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <link rel="stylesheet" href="analysis.css" />
+  <link rel="stylesheet" href="compare.css" />
+</head>
+<body>
+  <!-- ===== TOP BAR ===== -->
+  <header class="topbar">
+    <div class="topbar-left">
+      <a href="analysis.html" class="back-link" title="Torna all'analisi">← Analisi</a>
+      <span class="brand-icon">🏁</span>
+      <h1 class="brand-title">Confronto Runs</h1>
+    </div>
+    <div class="topbar-center">
+      <button id="btnAddRun" class="btn btn-primary">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 1v14M1 8h14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        Aggiungi File
+      </button>
+      <button id="btnLoadFromDB" class="btn btn-secondary">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="5" r="4" stroke="currentColor" stroke-width="1.5"/><path d="M4 5v6c0 2.2 1.8 4 4 4s4-1.8 4-4V5" stroke="currentColor" stroke-width="1.5"/></svg>
+        Carica da DB
+      </button>
+      <button id="btnImportBundle" class="btn btn-ghost btn-sm" title="Importa run da file esportato (.json)">
+        📥 Importa
+      </button>
+      <input type="file" id="runFileInput" accept=".txt,.csv,.log" hidden multiple />
+      <span id="runCount" class="data-info">Nessuna run caricata</span>
+    </div>
+    <div class="topbar-right">
+      <button id="btnClearAll" class="btn btn-ghost btn-sm" title="Rimuovi tutte le runs">🗑 Rimuovi Tutte</button>
+    </div>
+  </header>
+
+  <!-- ===== MAIN LAYOUT ===== -->
+  <div class="compare-layout">
+
+    <!-- ===== LEFT PANEL ===== -->
+    <aside class="compare-sidebar" id="compareSidebar">
+      <!-- Loaded runs list -->
+      <div class="sidebar-section">
+        <h3 class="section-title">📂 Runs Caricate</h3>
+        <div id="runsList" class="runs-list">
+          <p class="muted small">Carica almeno 2 file per confrontare.</p>
+        </div>
+      </div>
+
+      <!-- Chart config -->
+      <div class="sidebar-section">
+        <h3 class="section-title">📊 Grafici Sovrapposti</h3>
+        <div id="compareChartConfigs"></div>
+        <button id="btnAddCompareChart" class="btn btn-outline btn-block btn-sm" style="margin-top: 8px;">+ Aggiungi Grafico</button>
+      </div>
+
+      <!-- Split comparison -->
+      <div class="sidebar-section">
+        <h3 class="section-title">⏱ Confronto Tempi</h3>
+        <p class="muted small">Configura splits identici su tutte le runs per confrontare i tempi settore.</p>
+        <div id="splitComparisonConfig">
+          <div class="control-group" style="margin-top: 8px;">
+            <label class="control-label">Usa splits da:</label>
+            <select id="splitSourceRun" class="select-input">
+              <option value="">— Seleziona run —</option>
+            </select>
+          </div>
+          <button id="btnApplySplitsToAll" class="btn btn-outline btn-sm btn-block" style="margin-top: 6px;">Applica splits a tutte</button>
+        </div>
+      </div>
+
+      <!-- Setup comparison toggle -->
+      <div class="sidebar-section">
+        <h3 class="section-title">🔧 Confronto Setup</h3>
+        <p class="muted small">Confronta i setup e le note tra le diverse runs.</p>
+        <div class="toggle-row" style="margin-top: 6px;">
+          <label>Mostra differenze setup</label>
+          <input type="checkbox" id="chkShowSetupDiff" checked />
+        </div>
+        <div class="toggle-row">
+          <label>Mostra condizioni meteo</label>
+          <input type="checkbox" id="chkShowWeather" checked />
+        </div>
+      </div>
+    </aside>
+
+    <!-- ===== MAIN CONTENT ===== -->
+    <main class="compare-content" id="compareContent">
+      <!-- Welcome / empty state -->
+      <div id="compareWelcome" class="welcome-screen">
+        <div class="welcome-card">
+          <div class="welcome-icon">🏁</div>
+          <h2>Confronto Runs</h2>
+          <p>Carica 2 o più file di telemetria per confrontare le prestazioni con diversi setup.</p>
+          <div style="display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;">
+            <button id="btnAddRunWelcome" class="btn btn-primary btn-lg">
+              <svg width="20" height="20" viewBox="0 0 16 16" fill="none"><path d="M8 1v14M1 8h14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+              Carica da File
+            </button>
+            <button id="btnLoadFromDBWelcome" class="btn btn-secondary btn-lg">
+              📦 Carica da Database
+            </button>
+          </div>
+          <p class="muted small" style="margin-top: 12px;">Puoi caricare più file o selezionare runs salvate nel database.</p>
+        </div>
+      </div>
+
+      <!-- Dashboard (hidden until runs loaded) -->
+      <div id="compareDashboard" class="dashboard hidden">
+
+        <!-- Runs summary cards -->
+        <div id="runsSummaryArea" class="runs-summary-area"></div>
+
+        <!-- Setup comparison table -->
+        <div id="setupComparisonArea" class="setup-comparison-area"></div>
+
+        <!-- Split times comparison -->
+        <div id="splitTimesArea" class="split-times-area"></div>
+
+        <!-- Overlay charts -->
+        <div id="compareChartsArea" class="charts-area"></div>
+
+        <!-- Map with all tracks -->
+        <div id="compareMapArea" class="map-area">
+          <div class="card">
+            <div class="card-header">
+              <h3>🗺️ Tracciati Sovrapposti</h3>
+              <div style="display: flex; gap: 8px; align-items: center;">
+                <label class="control-label" style="margin: 0; white-space: nowrap;">Colora per:</label>
+                <select id="compareMapColorBy" class="select-input" style="width: 130px;">
+                  <option value="none">Run (colore unico)</option>
+                </select>
+              </div>
+            </div>
+            <div id="compareMapContainer" style="height: 500px; border-radius: 8px; overflow: hidden;"></div>
+          </div>
+        </div>
+
+      </div>
+    </main>
+  </div>
+
+  <!-- Toast notifications -->
+  <div id="toastContainer" class="toast-container"></div>
+
+  <!-- Module scripts -->
+  <script type="module" src="modules/api-client.js"></script>
+  <script type="module" src="modules/compare-view.js"></script>
+</body>
+</html>
