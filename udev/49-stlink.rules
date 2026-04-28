@@ -1,0 +1,2 @@
+# STMicroelectronics ST-LINK / ST-LINK-V2 / ST-LINK-V3
+SUBSYSTEM=="usb", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="3748|374a|374b|374d|374e|374f|3752|3753|3754|3755", MODE="0666"
