@@ -13,10 +13,12 @@ import SplitsPanel from './splits-panel.js';
 import SettingsPanel from './settings-panel.js';
 import SessionManager from './session-manager.js';
 import DbManager from './db-manager.js';
+import ApiClient from './api-client.js';
 
 // ---- DOM References ----
 const btnLoadFile = document.getElementById('btnLoadFile');
 const btnLoadFileWelcome = document.getElementById('btnLoadFileWelcome');
+const btnDebugBin = document.getElementById('btnDebugBin');
 const fileInput = document.getElementById('fileInput');
 const fileNameEl = document.getElementById('fileName');
 const dataInfoEl = document.getElementById('dataInfo');
@@ -136,12 +138,23 @@ function triggerFileLoad() {
 
 btnLoadFile?.addEventListener('click', triggerFileLoad);
 btnLoadFileWelcome?.addEventListener('click', triggerFileLoad);
+btnDebugBin?.addEventListener('click', async () => {
+  try {
+    const result = await ApiClient.debugBinFile();
+    DataStore.loadParsedData({ columns: result.columns, data: result.data }, result.file_name);
+    showToast(`Debug BIN backend: ${result.data.length.toLocaleString()} campioni`, 'success');
+  } catch (err) {
+    showToast(`Errore Debug BIN: ${err.message}`, 'error');
+    alert(`Errore Debug BIN: ${err.message}`);
+    console.error(err);
+  }
+});
 
 // Store raw CSV text for DB upload
 let lastCsvText = null;
 let isFirstLoad = true; // Track if this is the first file load
 
-async function handleFileLoad(text, fileName) {
+async function handleFileLoad(content, fileName) {
   // Check if there are existing splits from a previous run
   const prevSplits = DataStore.getSplits();
   const hasPrevSplits = prevSplits.start !== null || prevSplits.end !== null ||
@@ -152,13 +165,25 @@ async function handleFileLoad(text, fileName) {
     await SplitsPanel.promptSplitsReuse();
   }
 
-  lastCsvText = text;
-  DataStore.loadFromText(text, fileName);
+  if (content instanceof ArrayBuffer) {
+    lastCsvText = null;
+    DataStore.loadFromArrayBuffer(content, fileName);
+    showToast(`BIN letto: ${DataStore.getRowCount().toLocaleString()} campioni`, 'success');
+    setTimeout(() => {
+      try {
+        lastCsvText = DataStore.binaryToCsvText(content);
+        DbManager.uploadCurrentRun(lastCsvText, fileName);
+      } catch (err) {
+        console.warn('Upload DB saltato per file binario:', err);
+      }
+    }, 0);
+  } else {
+    lastCsvText = content;
+    DataStore.loadFromText(content, fileName);
+    DbManager.uploadCurrentRun(lastCsvText, fileName);
+  }
   isFirstLoad = false;
   showToast(`File "${fileName}" caricato con successo!`, 'success');
-
-  // Upload to DB in background
-  DbManager.uploadCurrentRun(text, fileName);
 }
 
 fileInput?.addEventListener('change', async (e) => {
@@ -166,9 +191,15 @@ fileInput?.addEventListener('change', async (e) => {
   if (!file) return;
 
   try {
-    await handleFileLoad(await file.text(), file.name);
+    const buffer = await file.arrayBuffer();
+    if (DataStore.hasBinaryMagic(buffer)) {
+      await handleFileLoad(buffer, file.name);
+    } else {
+      await handleFileLoad(new TextDecoder().decode(buffer), file.name);
+    }
   } catch (err) {
     showToast(`Errore nel caricamento: ${err.message}`, 'error');
+    alert(`Errore nel caricamento: ${err.message}`);
     console.error(err);
   }
 
@@ -190,7 +221,7 @@ DataStore.on('data-loaded', ({ data, columns, columnMeta, fileName }) => {
   ChartManager.removeAllCharts();
 
   // Chart 1: Accelerometer (all axes vs time)
-  const accCols = columns.filter(c => c.startsWith('a') && c !== 'alt_m');
+  const accCols = ['ax', 'ay', 'az'].filter(c => columns.includes(c));
   if (accCols.length > 0) {
     ChartManager.addChart({
       type: 'line',
@@ -201,7 +232,7 @@ DataStore.on('data-loaded', ({ data, columns, columnMeta, fileName }) => {
   }
 
   // Chart 2: Gyroscope
-  const gyroCols = columns.filter(c => c.startsWith('w'));
+  const gyroCols = ['wx', 'wy', 'wz'].filter(c => columns.includes(c));
   if (gyroCols.length > 0) {
     ChartManager.addChart({
       type: 'line',
@@ -235,8 +266,22 @@ DataStore.on('data-loaded', ({ data, columns, columnMeta, fileName }) => {
     });
   }
 
+  if (ChartManager.getCharts().length === 0) {
+    const fallback = columns.find(c => c !== 'timestamp' && data.some(r => Number.isFinite(r[c])));
+    if (fallback) {
+      ChartManager.addChart({
+        type: 'line',
+        xColumn: columns.includes('timestamp') ? 'timestamp' : columns[0],
+        yColumns: [fallback],
+        zColumn: fallback,
+      });
+    } else {
+      showToast('Dati caricati, ma nessuna colonna numerica disponibile per i grafici', 'error');
+    }
+  }
+
   // Show map if GPS data is valid
-  const hasGPS = data.some(r => r.lat && r.lon && Math.abs(r.lat) > 0.001 && Math.abs(r.lon) > 0.001);
+  const hasGPS = data.length <= 10000 && data.some(r => r.lat && r.lon && Math.abs(r.lat) > 0.001 && Math.abs(r.lon) > 0.001);
   if (hasGPS) {
     MapView.show();
   }
@@ -346,7 +391,12 @@ document.addEventListener('drop', async (e) => {
   if (!file) return;
 
   try {
-    await handleFileLoad(await file.text(), file.name);
+    const buffer = await file.arrayBuffer();
+    if (DataStore.hasBinaryMagic(buffer)) {
+      await handleFileLoad(buffer, file.name);
+    } else {
+      await handleFileLoad(new TextDecoder().decode(buffer), file.name);
+    }
   } catch (err) {
     showToast(`Errore: ${err.message}`, 'error');
   }

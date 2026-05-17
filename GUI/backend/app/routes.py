@@ -14,7 +14,9 @@ Endpoints:
 from __future__ import annotations
 
 import json
+import struct
 from datetime import datetime
+from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Query
@@ -30,6 +32,31 @@ from .models import (
 )
 
 router = APIRouter(prefix="/api")
+
+BINARY_MAGIC = b"TLM2BIN1"
+BINARY_HEADER_SIZE = 512
+BINARY_RECORD = struct.Struct("<Q14f4B4x")
+BINARY_RAW_COLUMNS = [
+    "timestamp_ns",
+    "gps_lat_deg",
+    "gps_lon_deg",
+    "gps_alt_m",
+    "gps_speed_kn",
+    "gps_course_deg",
+    "gps_hdop",
+    "ax_g",
+    "ay_g",
+    "az_g",
+    "wx_dps",
+    "wy_dps",
+    "wz_dps",
+    "travel1_v",
+    "travel2_v",
+    "gps_fix_quality",
+    "gps_sats",
+    "imu_ok",
+    "travel_ok",
+]
 
 
 @router.get("/health")
@@ -618,7 +645,10 @@ async def upload_run_file(
 ):
     """Upload a CSV/TXT file directly as multipart form data."""
     content = await file.read()
-    csv_text = content.decode("utf-8", errors="replace")
+    if content.startswith(BINARY_MAGIC):
+        csv_text = _binary_to_csv_text(content)
+    else:
+        csv_text = content.decode("utf-8", errors="replace")
 
     settings_dict = {}
     try:
@@ -637,6 +667,22 @@ async def upload_run_file(
         ),
     )
     return await create_run(upload)
+
+
+@router.get("/debug/bin-file")
+async def debug_bin_file(path: str = "/media/dario.zurlo/telemetry/LOG0001.BIN"):
+    file_path = Path(path)
+    if not file_path.exists():
+        raise HTTPException(404, f"File non trovato: {path}")
+    content = file_path.read_bytes()
+    csv_text = _binary_to_csv_text(content)
+    columns, data_rows = _parse_csv(csv_text, None)
+    return {
+        "file_name": file_path.name,
+        "size": len(content),
+        "columns": columns,
+        "data": data_rows,
+    }
 
 
 # ===================================================================
@@ -671,22 +717,87 @@ async def update_settings(body: SettingsBulk):
 # ===================================================================
 # HELPERS
 # ===================================================================
+def _binary_to_csv_text(content: bytes) -> str:
+    if len(content) <= BINARY_HEADER_SIZE:
+        raise HTTPException(400, "File binario vuoto o incompleto")
+
+    rows = [",".join(BINARY_RAW_COLUMNS)]
+    payload = memoryview(content)[BINARY_HEADER_SIZE:]
+    row_count = len(payload) // BINARY_RECORD.size
+    for index in range(row_count):
+        offset = index * BINARY_RECORD.size
+        values = BINARY_RECORD.unpack_from(payload, offset)
+        rows.append(",".join(str(value) for value in values))
+
+    if row_count == 0:
+        raise HTTPException(400, "Nessun campione binario valido trovato")
+
+    return "\n".join(rows)
+
+
+# Maps raw CSV column names → canonical names used by the GUI.
+_COLUMN_ALIASES: dict[str, str] = {
+    "timestamp_ns": "timestamp",
+    "timestamp_ms": "timestamp",
+    "gps_lat_deg":  "lat",
+    "gps_lon_deg":  "lon",
+    "gps_alt_m":    "alt_m",
+    "gps_speed_kn": "speed_kn",
+    "gps_course_deg": "course_deg",
+    "gps_sats":     "sats",
+    "gps_hdop":     "hdop",
+    "gps_fix":      "fix",
+    "gps_fix_quality": "fix_quality",
+    "ax_g": "ax", "ay_g": "ay", "az_g": "az",
+    "wx_dps": "wx", "wy_dps": "wy", "wz_dps": "wz",
+    "travel1_v": "travel_r_v",
+    "travel2_v": "travel_f_v",
+}
+
+# Divisor to convert the raw timestamp column value to seconds.
+_TIMESTAMP_SCALES: dict[str, float] = {
+    "timestamp_ns": 1_000_000_000.0,
+    "timestamp_ms": 1_000.0,
+}
+
+
 def _parse_csv(text: str, sensor_settings: dict | None = None) -> tuple[list[str], list[dict]]:
-    """Parse CSV text into (columns, rows). Applies timestamp conversion."""
+    """Parse CSV text into (columns, rows). Applies column aliasing and timestamp conversion."""
     lines = text.strip().split("\n")
     if len(lines) < 2:
         raise HTTPException(400, "File vuoto o formato non valido")
 
-    header = [h.strip().replace(" ", "_") for h in lines[0].split(",")]
+    raw_header = [h.strip().replace(" ", "_") for h in lines[0].split(",")]
+
+    # Determine timestamp scaling from original column name; fallback to sensor_settings.
+    ts_scale: float | None = None
+    for raw_col in raw_header:
+        if raw_col in _TIMESTAMP_SCALES:
+            ts_scale = _TIMESTAMP_SCALES[raw_col]
+            break
+    if ts_scale is None:
+        ts_unit = (sensor_settings or {}).get("timestampUnit", "ms_to_s")
+        if ts_unit == "ms_to_s":
+            ts_scale = 1_000.0
+
+    # Build canonical header (apply aliases, deduplicate).
+    header: list[str] = []
+    seen: set[str] = set()
+    for raw_col in raw_header:
+        canonical = _COLUMN_ALIASES.get(raw_col, raw_col)
+        if canonical in seen:
+            canonical = raw_col  # keep original if alias already used
+        seen.add(canonical)
+        header.append(canonical)
+
     data = []
-    ts_unit = (sensor_settings or {}).get("timestampUnit", "ms_to_s")
 
     for i in range(1, len(lines)):
         line = lines[i].strip()
         if not line:
             continue
         parts = line.split(",")
-        if len(parts) != len(header):
+        if len(parts) != len(raw_header):
             continue
         row = {}
         for j, col in enumerate(header):
@@ -696,8 +807,8 @@ def _parse_csv(text: str, sensor_settings: dict | None = None) -> tuple[list[str
             else:
                 try:
                     num = float(val)
-                    if col == "timestamp" and ts_unit == "ms_to_s":
-                        num /= 1000.0
+                    if col == "timestamp" and ts_scale:
+                        num /= ts_scale
                     row[col] = num
                 except ValueError:
                     row[col] = val

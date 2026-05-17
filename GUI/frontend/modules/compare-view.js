@@ -32,6 +32,7 @@ const KNOWN_LABELS = {
 };
 
 import ApiClient from './api-client.js';
+import DataStore from './data-store.js';
 
 // ===== Settings defaults (read from localStorage) =====
 function getSettings() {
@@ -205,8 +206,12 @@ const CompareView = (() => {
       if (files.length === 0) return;
       for (const file of files) {
         try {
-          const text = await file.text();
-          addRun(text, file.name);
+          const buffer = await file.arrayBuffer();
+          if (DataStore.hasBinaryMagic(buffer)) {
+            addParsedRun(DataStore.parseBinary(buffer), file.name);
+          } else {
+            addRun(new TextDecoder().decode(buffer), file.name);
+          }
         } catch (err) {
           showToast(`Errore "${file.name}": ${err.message}`, 'error');
         }
@@ -223,8 +228,12 @@ const CompareView = (() => {
       const files = Array.from(e.dataTransfer?.files || []);
       for (const file of files) {
         try {
-          const text = await file.text();
-          addRun(text, file.name);
+          const buffer = await file.arrayBuffer();
+          if (DataStore.hasBinaryMagic(buffer)) {
+            addParsedRun(DataStore.parseBinary(buffer), file.name);
+          } else {
+            addRun(new TextDecoder().decode(buffer), file.name);
+          }
         } catch (err) {
           showToast(`Errore "${file.name}": ${err.message}`, 'error');
         }
@@ -235,6 +244,11 @@ const CompareView = (() => {
   // ===== Add a run =====
   function addRun(text, fileName) {
     const { columns, data } = parseCSV(text);
+    addParsedRun({ columns, data }, fileName);
+  }
+
+  function addParsedRun(parsed, fileName) {
+    const { columns, data } = parsed;
     applyTravelConversion(data, columns);
     const columnMeta = computeColumnMeta(data, columns);
 

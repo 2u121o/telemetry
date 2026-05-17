@@ -154,59 +154,63 @@ const MapView = (() => {
     mapAreaEl.classList.remove('hidden');
     isVisible = true;
 
-    if (!map) {
-      map = L.map(mapContainerEl, {
-        zoomControl: true,
-        attributionControl: true,
-        maxZoom: 22,
-      }).setView([41.9, 12.5], 13);
-
-      const satellite = L.tileLayer(
-        'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-        attribution: 'Tiles &copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics',
-        maxZoom: 22,
-        maxNativeZoom: 19,
-      });
-
-      const labelsOverlay = L.tileLayer(
-        'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}', {
-        maxZoom: 22,
-        maxNativeZoom: 19,
-        opacity: 0.6,
-      });
-
-      const dark = L.tileLayer(
-        'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-        attribution: '&copy; OSM &copy; CARTO',
-        subdomains: 'abcd',
-        maxZoom: 22,
-        maxNativeZoom: 19,
-      });
-
-      satellite.addTo(map);
-      labelsOverlay.addTo(map);
-
-      L.control.layers({
-        'Satellite': satellite,
-        'Dark': dark,
-      }, {
-        'Etichette strade': labelsOverlay,
-      }, { position: 'topright', collapsed: true }).addTo(map);
-
-      fullTrackLayer = L.layerGroup().addTo(map);
-      activeTrackLayer = L.layerGroup().addTo(map);
-      splitMarkersLayer = L.layerGroup().addTo(map);
-      splitLabelsLayer = L.layerGroup();
-      if (showLabels) splitLabelsLayer.addTo(map);
-
-      map.on('click', onMapClick);
-      map.on('mousemove', onMapMouseMove);
-    }
-
+    // Delay initialization so the browser reflows the container after display:none is removed.
     setTimeout(() => {
+      if (!map) {
+        const initialCenter = allGpsPoints.length > 0
+          ? [allGpsPoints[0].lat, allGpsPoints[0].lon]
+          : [41.9, 12.5];
+        map = L.map(mapContainerEl, {
+          zoomControl: true,
+          attributionControl: true,
+          maxZoom: 22,
+        }).setView(initialCenter, 15);
+
+        const satellite = L.tileLayer(
+          'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+          attribution: 'Tiles &copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics',
+          maxZoom: 22,
+          maxNativeZoom: 19,
+        });
+
+        const labelsOverlay = L.tileLayer(
+          'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}', {
+          maxZoom: 22,
+          maxNativeZoom: 19,
+          opacity: 0.6,
+        });
+
+        const dark = L.tileLayer(
+          'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+          attribution: '&copy; OSM &copy; CARTO',
+          subdomains: 'abcd',
+          maxZoom: 22,
+          maxNativeZoom: 19,
+        });
+
+        satellite.addTo(map);
+        labelsOverlay.addTo(map);
+
+        L.control.layers({
+          'Satellite': satellite,
+          'Dark': dark,
+        }, {
+          'Etichette strade': labelsOverlay,
+        }, { position: 'topright', collapsed: true }).addTo(map);
+
+        fullTrackLayer = L.layerGroup().addTo(map);
+        activeTrackLayer = L.layerGroup().addTo(map);
+        splitMarkersLayer = L.layerGroup().addTo(map);
+        splitLabelsLayer = L.layerGroup();
+        if (showLabels) splitLabelsLayer.addTo(map);
+
+        map.on('click', onMapClick);
+        map.on('mousemove', onMapMouseMove);
+      }
+
       map.invalidateSize();
       updateMap();
-    }, 100);
+    }, 150);
   }
 
   function hide() {
@@ -231,6 +235,12 @@ const MapView = (() => {
       Math.abs(r.lat) > 0.001 &&
       Math.abs(r.lon) > 0.001
     );
+
+    // If the map is already open, immediately fly to the track.
+    if (map && allGpsPoints.length > 0) {
+      const latlngs = allGpsPoints.map(p => [p.lat, p.lon]);
+      map.fitBounds(L.latLngBounds(latlngs), { padding: [30, 30], animate: true });
+    }
   }
 
   // ---- Map click: place a split ----

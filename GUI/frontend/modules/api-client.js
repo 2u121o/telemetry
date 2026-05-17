@@ -68,6 +68,9 @@ const ApiClient = {
   getRunData:   (runId, offset = 0, limit = 0) =>
     request('GET', `/runs/${runId}/data?offset=${offset}&limit=${limit}`),
 
+  debugBinFile: (path = '/media/dario.zurlo/telemetry/LOG0001.BIN') =>
+    request('GET', `/debug/bin-file?path=${encodeURIComponent(path)}`),
+
   // ===== EXPORT / IMPORT =====
   exportRun:    (runId) => request('GET', `/runs/${runId}/export`),
   importRun:    (bundle) => request('POST', '/import', bundle),

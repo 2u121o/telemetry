@@ -3,8 +3,8 @@ name: WeAct Sensor Wiring
 overview: Schema preciso di collegamento per tutti i sensori della telemetria sulla board WeAct MiniSTM32H743, con pin esatti e interfacce ottimali.
 todos:
   - id: reconfigure-cubemx
-    content: "Riconfigurare il progetto CubeMX: UART4 (PA0/PA1), I2C2 (PB10/PB11), TIM2_CH1 (PA5), ADC1 (PC0/PC1/PC4/PC5), aggiornare SDMMC e SPI1 per la nuova board"
-    status: pending
+    content: "Riconfigurare il progetto CubeMX: USART2 (PA2/PA3 AF7, 38400), I2C2 (PB10/PB11), TIM2_CH1 (PA5), ADC1 (PC4/PC5), aggiornare SDMMC e SPI1 per la nuova board"
+    status: done
   - id: configure-i2c
     content: Configurare I2C2 (PB10 SCL, PB11 SDA) in CubeMX per IMU ISM330DHCX tramite Qwiic
     status: pending
@@ -91,20 +91,20 @@ B15 B14
 
 ## Schema di collegamento
 
-### 1 — GPS NEO-M9N (GPS-17285) → UART4
+### 1 — GPS NEO-M9N (GPS-17285) → USART2
 
 Tutti i pin sull'**header DESTRO**.
 
 
-| Etichetta board | STM32          | Direzione | GPS-17285 |
-| --------------- | -------------- | --------- | --------- |
-| **3V3**         | 3.3V           | →         | VCC       |
-| **GND**         | GND            | →         | GND       |
-| **A0**          | UART4_TX (AF8) | →         | RXI       |
-| **A1**          | UART4_RX (AF8) | ←         | TXO       |
+| Etichetta board | STM32            | Direzione | GPS-17285 |
+| --------------- | ---------------- | --------- | --------- |
+| **3V3**         | 3.3V             | →         | VCC       |
+| **GND**         | GND              | →         | GND       |
+| **A2**          | USART2_TX (AF7)  | →         | RXI       |
+| **A3**          | USART2_RX (AF7)  | ←         | TXO       |
 
 
-> Baud rate default NEO-M9N: 9600 (configurabile via UBX fino a 921600). Il modulo ha già la backup battery onboard.
+> Baud rate configurato: **38400**. I pin originali A0/A1 (UART4) erano danneggiati — migrati su A2/A3 (USART2). Il modulo ha già la backup battery onboard.
 
 ---
 
@@ -233,8 +233,8 @@ Header DESTRO (etichette silkscreen)
 │ C0   C1  │ ← Brake sensor 1 / 2 (ADC)        │
 │ C2   C3  │ ← SPI2 MISO/MOSI (futuri accel)   │
 │ GND  V+  │                                   │
-│ A0   A1  │ ← GPS TX / RX (UART4)             │
-│ A2   A3  │                                   │
+│ A0   A1  │ ← (UART4 — pin danneggiati)        │
+│ A2   A3  │ ← GPS TX / RX (USART2, 38400)     │
 │ A4   A5  │ ← A5 = Wheel speed (TIM2)         │
 │ A6   A7  │                                   │
 │ C4   C5  │ ← Travel sensor 1 / 2 (ADC)       │

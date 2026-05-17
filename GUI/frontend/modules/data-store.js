@@ -52,15 +52,78 @@ const DataStore = (() => {
   }
 
   // ---- Column metadata detection ----
+  // Maps raw CSV column names → canonical names used throughout the GUI.
+  const COLUMN_ALIASES = {
+    timestamp_ns: 'timestamp',
+    timestamp_ms: 'timestamp',
+    gps_lat_deg: 'lat',
+    gps_lon_deg: 'lon',
+    gps_alt_m: 'alt_m',
+    gps_speed_kn: 'speed_kn',
+    gps_course_deg: 'course_deg',
+    gps_sats: 'sats',
+    gps_hdop: 'hdop',
+    gps_fix: 'fix',
+    gps_fix_quality: 'fix_quality',
+    ax_g: 'ax', ay_g: 'ay', az_g: 'az',
+    wx_dps: 'wx', wy_dps: 'wy', wz_dps: 'wz',
+    travel1_v: 'travel_r_v',
+    travel2_v: 'travel_f_v',
+  };
+
+  // Divisor to convert timestamp column to seconds (keyed by original column name).
+  const TIMESTAMP_SCALES = {
+    timestamp_ns: 1_000_000_000,
+    timestamp_ms: 1_000,
+  };
+
+  const BINARY_MAGIC = 'TLM2BIN1';
+  const BINARY_HEADER_SIZE = 512;
+  const BINARY_RECORD_SIZE = 72;
+  const BINARY_RAW_COLUMNS = [
+    'timestamp_ns',
+    'gps_lat_deg',
+    'gps_lon_deg',
+    'gps_alt_m',
+    'gps_speed_kn',
+    'gps_course_deg',
+    'gps_hdop',
+    'ax_g',
+    'ay_g',
+    'az_g',
+    'wx_dps',
+    'wy_dps',
+    'wz_dps',
+    'travel1_v',
+    'travel2_v',
+    'gps_fix_quality',
+    'gps_sats',
+    'imu_ok',
+    'travel_ok',
+  ];
+
+  const BINARY_COLUMNS = BINARY_RAW_COLUMNS.map(col => COLUMN_ALIASES[col] || col);
+
   const KNOWN_UNITS = {
     timestamp: 's',
     ax: 'g', ay: 'g', az: 'g',
-    wx: 'rad/s', wy: 'rad/s', wz: 'rad/s',
+    wx: 'dps', wy: 'dps', wz: 'dps',
     lat: '°', lon: '°',
     alt_m: 'm',
-    travel_r_v: 'V',        // Raw voltage from sensor
-    travel_r_mm: 'mm',       // Converted travel in mm
-    travel_r_pct: '%',       // Converted travel in percentage
+    speed_kn: 'kn',
+    course_deg: '°',
+    sats: '',
+    hdop: '',
+    fix: '',
+    fix_quality: '',
+    travel_r_v: 'V',
+    travel_r_mm: 'mm',
+    travel_r_pct: '%',
+    travel_f_v: 'V',
+    travel_f_mm: 'mm',
+    travel_f_pct: '%',
+    imu_ok: '',
+    travel_ok: '',
   };
 
   const KNOWN_LABELS = {
@@ -69,9 +132,20 @@ const DataStore = (() => {
     wx: 'Gyro X', wy: 'Gyro Y', wz: 'Gyro Z',
     lat: 'Latitudine', lon: 'Longitudine',
     alt_m: 'Altitudine',
-    travel_r_v: 'Travel Rear (V)',
-    travel_r_mm: 'Travel Rear (mm)',
-    travel_r_pct: 'Travel Rear (%)',
+    speed_kn: 'Velocità GPS',
+    course_deg: 'Rotta',
+    sats: 'Satelliti',
+    hdop: 'HDOP',
+    fix: 'GPS Fix',
+    fix_quality: 'Qualità GPS',
+    travel_r_v: 'Travel Posteriore (V)',
+    travel_r_mm: 'Travel Posteriore (mm)',
+    travel_r_pct: 'Travel Posteriore (%)',
+    travel_f_v: 'Travel Anteriore (V)',
+    travel_f_mm: 'Travel Anteriore (mm)',
+    travel_f_pct: 'Travel Anteriore (%)',
+    imu_ok: 'IMU OK',
+    travel_ok: 'Travel OK',
   };
 
   function computeColumnMeta(data, cols) {
@@ -105,27 +179,44 @@ const DataStore = (() => {
     const lines = text.trim().split('\n');
     if (lines.length < 2) throw new Error('File vuoto o formato non valido');
 
-    // Parse header
-    const header = lines[0].split(',').map(h => h.trim().replace(/\s+/g, '_'));
+    const rawHeader = lines[0].split(',').map(h => h.trim().replace(/\s+/g, '_'));
+
+    // Determine timestamp scale from original column name; fall back to settings.
+    let tsScale = null;
+    for (const rawCol of rawHeader) {
+      if (TIMESTAMP_SCALES[rawCol] !== undefined) {
+        tsScale = TIMESTAMP_SCALES[rawCol];
+        break;
+      }
+    }
+    if (tsScale === null) {
+      const tsUnit = window.__telemetrySettings?.get?.('timestampUnit') || 'ms_to_s';
+      if (tsUnit === 'ms_to_s') tsScale = 1000;
+    }
+
+    // Build canonical header applying aliases (avoid duplicates).
+    const seen = new Set();
+    const header = rawHeader.map(raw => {
+      let canonical = COLUMN_ALIASES[raw] || raw;
+      if (seen.has(canonical)) canonical = raw;
+      seen.add(canonical);
+      return canonical;
+    });
+
     const data = [];
-    const hasTimestamp = header.includes('timestamp');
 
     for (let i = 1; i < lines.length; i++) {
       const line = lines[i].trim();
       if (!line) continue;
       const parts = line.split(',');
-      if (parts.length !== header.length) continue;
+      if (parts.length !== rawHeader.length) continue;
 
       const row = {};
       for (let j = 0; j < header.length; j++) {
         const val = parts[j].trim();
         let num = val === '' ? null : Number(val);
-        // Convert timestamp from ms to seconds (based on settings)
-        if (header[j] === 'timestamp' && num !== null) {
-          const tsUnit = window.__telemetrySettings?.get?.('timestampUnit') || 'ms_to_s';
-          if (tsUnit === 'ms_to_s') {
-            num = num / 1000;
-          }
+        if (header[j] === 'timestamp' && num !== null && tsScale) {
+          num = num / tsScale;
         }
         row[header[j]] = num;
       }
@@ -135,31 +226,112 @@ const DataStore = (() => {
     return { columns: header, data };
   }
 
-  // ---- Travel conversion (voltage → mm and %) ----
-  // Called after parsing and when settings change
-  function applyTravelConversion() {
-    if (!columns.includes('travel_r_v')) return;
+  function hasBinaryMagic(buffer) {
+    if (!buffer || buffer.byteLength < BINARY_MAGIC.length) return false;
+    const bytes = new Uint8Array(buffer, 0, BINARY_MAGIC.length);
+    return BINARY_MAGIC.split('').every((ch, i) => bytes[i] === ch.charCodeAt(0));
+  }
 
-    // Lazy import: get settings from global if available
+  function parseBinary(buffer) {
+    if (!hasBinaryMagic(buffer)) {
+      throw new Error('Formato binario non riconosciuto');
+    }
+    if (buffer.byteLength <= BINARY_HEADER_SIZE) {
+      throw new Error('File binario vuoto o incompleto');
+    }
+
+    const view = new DataView(buffer);
+    const data = [];
+    const rowCount = Math.floor((buffer.byteLength - BINARY_HEADER_SIZE) / BINARY_RECORD_SIZE);
+
+    for (let i = 0; i < rowCount; i++) {
+      const base = BINARY_HEADER_SIZE + i * BINARY_RECORD_SIZE;
+      const timestampNs = view.getUint32(base, true) + view.getUint32(base + 4, true) * 4_294_967_296;
+      const row = {
+        timestamp: timestampNs / 1_000_000_000,
+        lat: view.getFloat32(base + 8, true),
+        lon: view.getFloat32(base + 12, true),
+        alt_m: view.getFloat32(base + 16, true),
+        speed_kn: view.getFloat32(base + 20, true),
+        course_deg: view.getFloat32(base + 24, true),
+        hdop: view.getFloat32(base + 28, true),
+        ax: view.getFloat32(base + 32, true),
+        ay: view.getFloat32(base + 36, true),
+        az: view.getFloat32(base + 40, true),
+        wx: view.getFloat32(base + 44, true),
+        wy: view.getFloat32(base + 48, true),
+        wz: view.getFloat32(base + 52, true),
+        travel_r_v: view.getFloat32(base + 56, true),
+        travel_f_v: view.getFloat32(base + 60, true),
+        fix_quality: view.getUint8(base + 64),
+        sats: view.getUint8(base + 65),
+        imu_ok: view.getUint8(base + 66),
+        travel_ok: view.getUint8(base + 67),
+      };
+      row.fix = row.fix_quality > 0 ? 1 : 0;
+      data.push(row);
+    }
+
+    if (data.length === 0) {
+      throw new Error('Nessun campione binario valido trovato');
+    }
+
+    return { columns: [...BINARY_COLUMNS, 'fix'], data };
+  }
+
+  function binaryToCsvText(buffer) {
+    const parsed = parseBinary(buffer);
+    const lines = [BINARY_RAW_COLUMNS.join(',')];
+    for (const row of parsed.data) {
+      lines.push([
+        Math.round((row.timestamp || 0) * 1_000_000_000),
+        row.lat,
+        row.lon,
+        row.alt_m,
+        row.speed_kn,
+        row.course_deg,
+        row.hdop,
+        row.ax,
+        row.ay,
+        row.az,
+        row.wx,
+        row.wy,
+        row.wz,
+        row.travel_r_v,
+        row.travel_f_v,
+        row.fix_quality,
+        row.sats,
+        row.imu_ok,
+        row.travel_ok,
+      ].join(','));
+    }
+    return lines.join('\n');
+  }
+
+  // ---- Travel conversion (voltage → mm and %) ----
+  function applyTravelConversion() {
     const settingsModule = window.__telemetrySettings;
     if (!settingsModule) return;
 
-    // Add derived columns if not present
-    if (!columns.includes('travel_r_mm')) {
-      columns.push('travel_r_mm');
-    }
-    if (!columns.includes('travel_r_pct')) {
-      columns.push('travel_r_pct');
-    }
+    const targets = [
+      { v: 'travel_r_v', mm: 'travel_r_mm', pct: 'travel_r_pct' },
+      { v: 'travel_f_v', mm: 'travel_f_mm', pct: 'travel_f_pct' },
+    ];
 
-    for (const row of rawData) {
-      const voltage = row.travel_r_v;
-      if (voltage !== null && voltage !== undefined && !isNaN(voltage)) {
-        row.travel_r_mm = settingsModule.voltageToTravel(voltage);
-        row.travel_r_pct = settingsModule.voltageToTravelPct(voltage);
-      } else {
-        row.travel_r_mm = null;
-        row.travel_r_pct = null;
+    for (const { v, mm, pct } of targets) {
+      if (!columns.includes(v)) continue;
+      if (!columns.includes(mm)) columns.push(mm);
+      if (!columns.includes(pct)) columns.push(pct);
+
+      for (const row of rawData) {
+        const voltage = row[v];
+        if (voltage !== null && voltage !== undefined && !isNaN(voltage)) {
+          row[mm] = settingsModule.voltageToTravel(voltage);
+          row[pct] = settingsModule.voltageToTravelPct(voltage);
+        } else {
+          row[mm] = null;
+          row[pct] = null;
+        }
       }
     }
   }
@@ -167,6 +339,19 @@ const DataStore = (() => {
   // ---- Public API ----
   function loadFromText(text, name = 'unknown') {
     const result = parseCSV(text);
+    loadParsed(result, name);
+  }
+
+  function loadFromArrayBuffer(buffer, name = 'unknown') {
+    const result = parseBinary(buffer);
+    loadParsed(result, name);
+  }
+
+  function loadParsedData(parsed, name = 'unknown') {
+    loadParsed(parsed, name);
+  }
+
+  function loadParsed(result, name) {
     rawData = result.data;
     columns = result.columns;
     fileName = name;
@@ -397,7 +582,8 @@ const DataStore = (() => {
 
   return {
     on, off, emit,
-    loadFromText,
+    loadFromText, loadFromArrayBuffer, loadParsedData,
+    parseBinary, binaryToCsvText, hasBinaryMagic,
     getColumns, getColumnMeta, getRawData, getFilteredData,
     getFileName, getRowCount, getFilteredRowCount,
     getColumnValues, getTimeSeries,

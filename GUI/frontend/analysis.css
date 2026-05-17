@@ -410,7 +410,7 @@ a:hover { color: var(--accent-hover); }
 /* ===== MAP ===== */
 .map-area .card { padding: 0; overflow: hidden; }
 .map-area .card-header { padding: var(--gap-md) var(--gap-lg); }
-#mapContainer { background: var(--bg); }
+#mapContainer { background: var(--bg); width: 100%; }
 
 .map-controls {
   display: flex;
