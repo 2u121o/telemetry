@@ -26,6 +26,16 @@ const DEFAULTS = {
   travel_vMin: 0.0,
   travel_strokeMm: 200,
   travel_inverted: false,
+  travel_r_vMax: 3.3,
+  travel_r_vMin: 0.0,
+  travel_r_strokeMm: 200,
+  travel_r_factor: 1.0,
+  travel_r_inverted: true,
+  travel_f_vMax: 3.3,
+  travel_f_vMin: 0.0,
+  travel_f_strokeMm: 170,
+  travel_f_factor: 1.0,
+  travel_f_inverted: false,
   map_splitLineLength: 1,
   map_trackWeight: 3.5,
   map_inactiveOpacity: 0.45,
@@ -231,17 +241,28 @@ const SettingsPanel = (() => {
   }
 
   // ---- Travel conversion ----
-  function voltageToTravel(voltage) {
-    const { travel_vMax: vMax, travel_vMin: vMin, travel_strokeMm: stroke, travel_inverted: inv } = settings;
-    if (vMax === vMin) return 0;
-    let r = inv ? (voltage - vMin) / (vMax - vMin) : 1 - (voltage - vMin) / (vMax - vMin);
-    return Math.max(0, Math.min(1, r)) * stroke;
+  function getTravelConfig(side = 'r') {
+    const prefix = side === 'f' ? 'travel_f' : 'travel_r';
+    return {
+      vMax: settings[`${prefix}_vMax`] ?? settings.travel_vMax ?? DEFAULTS[`${prefix}_vMax`],
+      vMin: settings[`${prefix}_vMin`] ?? settings.travel_vMin ?? DEFAULTS[`${prefix}_vMin`],
+      stroke: settings[`${prefix}_strokeMm`] ?? settings.travel_strokeMm ?? DEFAULTS[`${prefix}_strokeMm`],
+      factor: settings[`${prefix}_factor`] ?? DEFAULTS[`${prefix}_factor`],
+      inverted: settings[`${prefix}_inverted`] ?? (side === 'r' ? true : (settings.travel_inverted ?? false)),
+    };
   }
-  function voltageToTravelPct(voltage) {
-    const { travel_vMax: vMax, travel_vMin: vMin, travel_inverted: inv } = settings;
+
+  function voltageToTravel(voltage, side = 'r') {
+    const { vMax, vMin, stroke, factor, inverted: inv } = getTravelConfig(side);
     if (vMax === vMin) return 0;
     let r = inv ? (voltage - vMin) / (vMax - vMin) : 1 - (voltage - vMin) / (vMax - vMin);
-    return Math.max(0, Math.min(1, r)) * 100;
+    return Math.max(0, Math.min(1, r)) * stroke * factor;
+  }
+  function voltageToTravelPct(voltage, side = 'r') {
+    const { vMax, vMin, factor, inverted: inv } = getTravelConfig(side);
+    if (vMax === vMin) return 0;
+    let r = inv ? (voltage - vMin) / (vMax - vMin) : 1 - (voltage - vMin) / (vMax - vMin);
+    return Math.max(0, Math.min(100, Math.max(0, Math.min(1, r)) * 100 * factor));
   }
 
   // ---- For session manager ----
@@ -307,12 +328,20 @@ const SettingsPanel = (() => {
 
       <!-- ===== SENSORE TRAVEL ===== -->
       <div class="settings-section">
-        <h4 class="settings-section-title">📡 Sensore Travel</h4>
-        <p class="settings-hint">Conversione tensione → escursione. 3.3V = esteso (0%), 0V = compresso (100%).</p>
-        <div class="settings-row"><label class="settings-label">V max (esteso)</label><input type="number" step="0.01" min="0" max="5" class="number-input settings-input" id="set_travel_vMax" value="${settings.travel_vMax}" /><span class="settings-unit">V</span></div>
-        <div class="settings-row"><label class="settings-label">V min (compresso)</label><input type="number" step="0.01" min="0" max="5" class="number-input settings-input" id="set_travel_vMin" value="${settings.travel_vMin}" /><span class="settings-unit">V</span></div>
-        <div class="settings-row"><label class="settings-label">Corsa totale</label><input type="number" step="1" min="1" max="500" class="number-input settings-input" id="set_travel_strokeMm" value="${settings.travel_strokeMm}" /><span class="settings-unit">mm</span></div>
-        <div class="settings-row"><label class="settings-label">Invertito</label><input type="checkbox" id="set_travel_inverted" ${settings.travel_inverted ? 'checked' : ''} style="accent-color:var(--accent);" /></div>
+        <h4 class="settings-section-title">📡 Sensori Travel</h4>
+        <p class="settings-hint">Calibrazione separata per posteriore e anteriore.</p>
+        <label class="control-label" style="margin-top:6px;">Posteriore</label>
+        <div class="settings-row"><label class="settings-label">V max</label><input type="number" step="0.01" min="0" max="5" class="number-input settings-input" id="set_travel_r_vMax" value="${settings.travel_r_vMax}" /><span class="settings-unit">V</span></div>
+        <div class="settings-row"><label class="settings-label">V min</label><input type="number" step="0.01" min="0" max="5" class="number-input settings-input" id="set_travel_r_vMin" value="${settings.travel_r_vMin}" /><span class="settings-unit">V</span></div>
+        <div class="settings-row"><label class="settings-label">Corsa</label><input type="number" step="1" min="1" max="500" class="number-input settings-input" id="set_travel_r_strokeMm" value="${settings.travel_r_strokeMm}" /><span class="settings-unit">mm</span></div>
+        <div class="settings-row"><label class="settings-label">Fattore</label><input type="number" step="0.001" min="0.001" max="10" class="number-input settings-input" id="set_travel_r_factor" value="${settings.travel_r_factor}" /><span class="settings-unit">x</span></div>
+        <div class="settings-row"><label class="settings-label">Invertito</label><input type="checkbox" id="set_travel_r_inverted" ${settings.travel_r_inverted ? 'checked' : ''} style="accent-color:var(--accent);" /></div>
+        <label class="control-label" style="margin-top:10px;">Anteriore</label>
+        <div class="settings-row"><label class="settings-label">V max</label><input type="number" step="0.01" min="0" max="5" class="number-input settings-input" id="set_travel_f_vMax" value="${settings.travel_f_vMax}" /><span class="settings-unit">V</span></div>
+        <div class="settings-row"><label class="settings-label">V min</label><input type="number" step="0.01" min="0" max="5" class="number-input settings-input" id="set_travel_f_vMin" value="${settings.travel_f_vMin}" /><span class="settings-unit">V</span></div>
+        <div class="settings-row"><label class="settings-label">Corsa</label><input type="number" step="1" min="1" max="500" class="number-input settings-input" id="set_travel_f_strokeMm" value="${settings.travel_f_strokeMm}" /><span class="settings-unit">mm</span></div>
+        <div class="settings-row"><label class="settings-label">Fattore</label><input type="number" step="0.001" min="0.001" max="10" class="number-input settings-input" id="set_travel_f_factor" value="${settings.travel_f_factor}" /><span class="settings-unit">x</span></div>
+        <div class="settings-row"><label class="settings-label">Invertito</label><input type="checkbox" id="set_travel_f_inverted" ${settings.travel_f_inverted ? 'checked' : ''} style="accent-color:var(--accent);" /></div>
       </div>
 
       <!-- ===== MAPPA ===== -->
@@ -587,12 +616,12 @@ const SettingsPanel = (() => {
   // ---- Bind events ----
   function bindEvents() {
     // Settings number fields
-    for (const field of ['travel_vMax','travel_vMin','travel_strokeMm','map_splitLineLength','map_trackWeight','chart_height','chart_lineWidth','decimals']) {
+    for (const field of ['travel_r_vMax','travel_r_vMin','travel_r_strokeMm','travel_r_factor','travel_f_vMax','travel_f_vMin','travel_f_strokeMm','travel_f_factor','map_splitLineLength','map_trackWeight','chart_height','chart_lineWidth','decimals']) {
       const el = document.getElementById(`set_${field}`);
       if (el) el.addEventListener('change', () => set(field, parseFloat(el.value)));
     }
     // Settings checkboxes
-    for (const field of ['travel_inverted','map_showLabels','chart_showGrid']) {
+    for (const field of ['travel_r_inverted','travel_f_inverted','map_showLabels','chart_showGrid']) {
       const el = document.getElementById(`set_${field}`);
       if (el) el.addEventListener('change', () => set(field, el.checked));
     }

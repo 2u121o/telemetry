@@ -10,6 +10,7 @@ import MapView from './map-view.js';
 import StatsPanel from './stats-panel.js';
 import DataTable from './data-table.js';
 import SplitsPanel from './splits-panel.js';
+import SagPanel from './sag-panel.js';
 import SettingsPanel from './settings-panel.js';
 import SessionManager from './session-manager.js';
 import DbManager from './db-manager.js';
@@ -42,6 +43,10 @@ const btnClearFilters = document.getElementById('btnClearFilters');
 
 // Stats
 const statsContent = document.getElementById('statsContent');
+
+// SAG
+const sagArea = document.getElementById('sagArea');
+const sagResults = document.getElementById('sagResults');
 
 // Splits
 const splitsContent = document.getElementById('splitsContent');
@@ -86,6 +91,7 @@ MapView.initPlacementControls(
 StatsPanel.init(statsContent);
 DataTable.init(dataTableHead, dataTableBody, tableCount, tablePagination, tableArea, tablePageSize, btnExportCSV);
 SplitsPanel.init(splitsContent);
+SagPanel.init(sagArea, sagResults);
 SettingsPanel.init(settingsContent);
 
 // Expose settings globally so DataStore and MapView can access them
@@ -127,6 +133,15 @@ tabBtns.forEach(btn => {
     }
     if (targetPanel === 'panel-table') {
       DataTable.show();
+    }
+    if (targetPanel === 'panel-sag') {
+      SagPanel.show();
+      chartsArea?.classList.add('hidden');
+      mapArea?.classList.add('hidden');
+      tableArea?.classList.add('hidden');
+    } else {
+      SagPanel.hide();
+      chartsArea?.classList.remove('hidden');
     }
   });
 });

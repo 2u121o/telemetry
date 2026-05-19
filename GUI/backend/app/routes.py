@@ -814,31 +814,41 @@ def _parse_csv(text: str, sensor_settings: dict | None = None) -> tuple[list[str
                     row[col] = val
         data.append(row)
 
-    # Apply travel conversion
-    if "travel_r_v" in header:
-        settings = sensor_settings or {}
-        v_max = float(settings.get("travel_vMax", 3.3))
-        v_min = float(settings.get("travel_vMin", 0))
-        stroke = float(settings.get("travel_strokeMm", 200))
-        inverted = bool(settings.get("travel_inverted", False))
+    settings = sensor_settings or {}
+    travel_targets = [
+        ("r", "travel_r_v", "travel_r_mm", "travel_r_pct", 200.0, True),
+        ("f", "travel_f_v", "travel_f_mm", "travel_f_pct", 170.0, False),
+    ]
+    for side, v_col, mm_col, pct_col, default_stroke, default_inverted in travel_targets:
+        if v_col not in header:
+            continue
+        prefix = f"travel_{side}"
+        v_max = float(settings.get(f"{prefix}_vMax", settings.get("travel_vMax", 3.3)))
+        v_min = float(settings.get(f"{prefix}_vMin", settings.get("travel_vMin", 0)))
+        stroke = float(settings.get(f"{prefix}_strokeMm", settings.get("travel_strokeMm", default_stroke)))
+        factor = float(settings.get(f"{prefix}_factor", 1))
+        inverted = settings.get(
+            f"{prefix}_inverted",
+            True if side == "r" else settings.get("travel_inverted", default_inverted),
+        )
 
-        if "travel_r_mm" not in header:
-            header.append("travel_r_mm")
-        if "travel_r_pct" not in header:
-            header.append("travel_r_pct")
+        if mm_col not in header:
+            header.append(mm_col)
+        if pct_col not in header:
+            header.append(pct_col)
 
         for row in data:
-            v = row.get("travel_r_v")
+            v = row.get(v_col)
             if v is not None and isinstance(v, (int, float)):
                 r = (v - v_min) / (v_max - v_min) if v_max != v_min else 0
                 if not inverted:
                     r = 1 - r
                 r = max(0, min(1, r))
-                row["travel_r_mm"] = round(r * stroke, 3)
-                row["travel_r_pct"] = round(r * 100, 2)
+                row[mm_col] = round(r * stroke * factor, 3)
+                row[pct_col] = round(max(0, min(100, r * 100 * factor)), 2)
             else:
-                row["travel_r_mm"] = None
-                row["travel_r_pct"] = None
+                row[mm_col] = None
+                row[pct_col] = None
 
     return header, data
 

@@ -314,11 +314,11 @@ const DataStore = (() => {
     if (!settingsModule) return;
 
     const targets = [
-      { v: 'travel_r_v', mm: 'travel_r_mm', pct: 'travel_r_pct' },
-      { v: 'travel_f_v', mm: 'travel_f_mm', pct: 'travel_f_pct' },
+      { v: 'travel_r_v', mm: 'travel_r_mm', pct: 'travel_r_pct', side: 'r' },
+      { v: 'travel_f_v', mm: 'travel_f_mm', pct: 'travel_f_pct', side: 'f' },
     ];
 
-    for (const { v, mm, pct } of targets) {
+    for (const { v, mm, pct, side } of targets) {
       if (!columns.includes(v)) continue;
       if (!columns.includes(mm)) columns.push(mm);
       if (!columns.includes(pct)) columns.push(pct);
@@ -326,8 +326,8 @@ const DataStore = (() => {
       for (const row of rawData) {
         const voltage = row[v];
         if (voltage !== null && voltage !== undefined && !isNaN(voltage)) {
-          row[mm] = settingsModule.voltageToTravel(voltage);
-          row[pct] = settingsModule.voltageToTravelPct(voltage);
+          row[mm] = settingsModule.voltageToTravel(voltage, side);
+          row[pct] = settingsModule.voltageToTravelPct(voltage, side);
         } else {
           row[mm] = null;
           row[pct] = null;

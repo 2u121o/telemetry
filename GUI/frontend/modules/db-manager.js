@@ -50,6 +50,16 @@ const DbManager = (() => {
         travel_vMin: settings.travel_vMin ?? 0,
         travel_strokeMm: settings.travel_strokeMm ?? 200,
         travel_inverted: settings.travel_inverted ?? false,
+        travel_r_vMax: settings.travel_r_vMax ?? settings.travel_vMax ?? 3.3,
+        travel_r_vMin: settings.travel_r_vMin ?? settings.travel_vMin ?? 0,
+        travel_r_strokeMm: settings.travel_r_strokeMm ?? settings.travel_strokeMm ?? 200,
+        travel_r_factor: settings.travel_r_factor ?? 1,
+        travel_r_inverted: settings.travel_r_inverted ?? true,
+        travel_f_vMax: settings.travel_f_vMax ?? settings.travel_vMax ?? 3.3,
+        travel_f_vMin: settings.travel_f_vMin ?? settings.travel_vMin ?? 0,
+        travel_f_strokeMm: settings.travel_f_strokeMm ?? settings.travel_strokeMm ?? 170,
+        travel_f_factor: settings.travel_f_factor ?? 1,
+        travel_f_inverted: settings.travel_f_inverted ?? settings.travel_inverted ?? false,
       };
 
       // Check if run with same filename already exists

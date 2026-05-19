@@ -23,12 +23,14 @@ const KNOWN_UNITS = {
   wx: 'rad/s', wy: 'rad/s', wz: 'rad/s',
   lat: '°', lon: '°', alt_m: 'm',
   travel_r_v: 'V', travel_r_mm: 'mm', travel_r_pct: '%',
+  travel_f_v: 'V', travel_f_mm: 'mm', travel_f_pct: '%',
 };
 const KNOWN_LABELS = {
   timestamp: 'Tempo', ax: 'Accel X', ay: 'Accel Y', az: 'Accel Z',
   wx: 'Gyro X', wy: 'Gyro Y', wz: 'Gyro Z',
   lat: 'Latitudine', lon: 'Longitudine', alt_m: 'Altitudine',
   travel_r_v: 'Travel Rear (V)', travel_r_mm: 'Travel Rear (mm)', travel_r_pct: 'Travel Rear (%)',
+  travel_f_v: 'Travel Front (V)', travel_f_mm: 'Travel Front (mm)', travel_f_pct: 'Travel Front (%)',
 };
 
 import ApiClient from './api-client.js';
@@ -95,26 +97,35 @@ function parseCSV(text) {
 
 // ===== Travel conversion =====
 function applyTravelConversion(data, columns) {
-  if (!columns.includes('travel_r_v')) return;
   const s = getSettings();
-  const vMax = s.travel_vMax ?? 3.3;
-  const vMin = s.travel_vMin ?? 0;
-  const stroke = s.travel_strokeMm ?? 200;
-  const inv = s.travel_inverted ?? false;
+  const targets = [
+    { side: 'r', vCol: 'travel_r_v', mmCol: 'travel_r_mm', pctCol: 'travel_r_pct', defaultStroke: 200, defaultInverted: true },
+    { side: 'f', vCol: 'travel_f_v', mmCol: 'travel_f_mm', pctCol: 'travel_f_pct', defaultStroke: 170, defaultInverted: false },
+  ];
 
-  if (!columns.includes('travel_r_mm')) columns.push('travel_r_mm');
-  if (!columns.includes('travel_r_pct')) columns.push('travel_r_pct');
+  for (const target of targets) {
+    if (!columns.includes(target.vCol)) continue;
+    const prefix = `travel_${target.side}`;
+    const vMax = s[`${prefix}_vMax`] ?? s.travel_vMax ?? 3.3;
+    const vMin = s[`${prefix}_vMin`] ?? s.travel_vMin ?? 0;
+    const stroke = s[`${prefix}_strokeMm`] ?? s.travel_strokeMm ?? target.defaultStroke;
+    const factor = s[`${prefix}_factor`] ?? 1;
+    const inv = s[`${prefix}_inverted`] ?? (target.side === 'r' ? true : (s.travel_inverted ?? target.defaultInverted));
 
-  for (const row of data) {
-    const v = row.travel_r_v;
-    if (v !== null && v !== undefined && !isNaN(v)) {
-      let r = inv ? (v - vMin) / (vMax - vMin) : 1 - (v - vMin) / (vMax - vMin);
-      r = Math.max(0, Math.min(1, r));
-      row.travel_r_mm = r * stroke;
-      row.travel_r_pct = r * 100;
-    } else {
-      row.travel_r_mm = null;
-      row.travel_r_pct = null;
+    if (!columns.includes(target.mmCol)) columns.push(target.mmCol);
+    if (!columns.includes(target.pctCol)) columns.push(target.pctCol);
+
+    for (const row of data) {
+      const v = row[target.vCol];
+      if (v !== null && v !== undefined && !isNaN(v)) {
+        let r = inv ? (v - vMin) / (vMax - vMin) : 1 - (v - vMin) / (vMax - vMin);
+        r = Math.max(0, Math.min(1, r));
+        row[target.mmCol] = r * stroke * factor;
+        row[target.pctCol] = Math.max(0, Math.min(100, r * 100 * factor));
+      } else {
+        row[target.mmCol] = null;
+        row[target.pctCol] = null;
+      }
     }
   }
 }

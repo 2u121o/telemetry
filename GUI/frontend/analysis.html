@@ -72,6 +72,9 @@
         <button class="tab-btn" data-panel="panel-stats" title="Statistiche">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><rect x="3" y="12" width="4" height="8" rx="1" stroke="currentColor" stroke-width="2"/><rect x="10" y="6" width="4" height="14" rx="1" stroke="currentColor" stroke-width="2"/><rect x="17" y="2" width="4" height="18" rx="1" stroke="currentColor" stroke-width="2"/></svg>
         </button>
+        <button class="tab-btn" data-panel="panel-sag" title="Calcolo SAG">
+          <span style="font-size:0.65rem;font-weight:800;letter-spacing:-0.4px;">SAG</span>
+        </button>
         <button class="tab-btn" data-panel="panel-map" title="Mappa">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="9" r="2.5" stroke="currentColor" stroke-width="2"/></svg>
         </button>
@@ -115,6 +118,16 @@
         <div id="statsContent">
           <p class="muted">Carica un file per vedere le statistiche</p>
         </div>
+      </div>
+
+      <!-- Panel: SAG -->
+      <div class="sidebar-panel" id="panel-sag">
+        <h3 class="panel-title">Calcolo SAG</h3>
+        <p class="muted small">Seleziona una finestra sul plot: la GUI calcola ultimo campione meno primo campione.</p>
+        <div id="sagResults">
+          <p class="muted">Carica un file per calcolare il SAG</p>
+        </div>
+        <button id="btnSagClear" class="btn btn-outline btn-block">Pulisci selezione</button>
       </div>
 
       <!-- Panel: Map -->
@@ -200,6 +213,17 @@
         <!-- Charts area -->
         <div id="chartsArea" class="charts-area"></div>
 
+        <!-- SAG calculation area -->
+        <div id="sagArea" class="sag-area hidden">
+          <div class="card">
+            <div class="card-header">
+              <h3>Calcolo SAG Travel</h3>
+              <span class="badge">Seleziona una finestra</span>
+            </div>
+            <div id="sagPlot" class="sag-plot"></div>
+          </div>
+        </div>
+
         <!-- Map area -->
         <div id="mapArea" class="map-area hidden">
           <div class="card">
@@ -241,6 +265,7 @@
   <script type="module" src="modules/stats-panel.js"></script>
   <script type="module" src="modules/data-table.js"></script>
   <script type="module" src="modules/splits-panel.js"></script>
+  <script type="module" src="modules/sag-panel.js"></script>
   <script type="module" src="modules/settings-panel.js"></script>
   <script type="module" src="modules/api-client.js"></script>
   <script type="module" src="modules/db-manager.js"></script>
