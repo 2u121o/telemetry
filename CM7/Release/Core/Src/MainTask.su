@@ -1,0 +1,26 @@
+../Core/Inc/IMU.hpp:33:13:virtual uint8_t telemetry::IMUSensor::columnCount() const	0	static
+../Core/Inc/IMU.hpp:36:24:virtual const char* const* telemetry::IMUSensor::columnNames() const	0	static
+../Core/Inc/IMU.hpp:39:10:virtual void telemetry::IMUSensor::fillValues(float*) const	0	static
+../Core/Inc/ADCSensor.hpp:26:13:virtual uint8_t telemetry::ADCSensor::columnCount() const	0	static
+../Core/Inc/ADCSensor.hpp:28:24:virtual const char* const* telemetry::ADCSensor::columnNames() const	0	static
+../Core/Inc/ADCSensor.hpp:33:10:virtual void telemetry::ADCSensor::fillValues(float*) const	0	static
+../Core/Inc/GPSSensor.hpp:36:13:virtual uint8_t telemetry::GPSSensor::columnCount() const	0	static
+../Core/Inc/GPSSensor.hpp:37:24:virtual const char* const* telemetry::GPSSensor::columnNames() const	0	static
+../Core/Inc/GPSSensor.hpp:39:10:virtual void telemetry::GPSSensor::fillValues(float*) const	0	static
+../Core/Inc/IMU.hpp:8:7:telemetry::IMUSensor::~IMUSensor()	0	static
+../Core/Inc/GPSSensor.hpp:8:7:telemetry::GPSSensor::~GPSSensor()	0	static
+../Core/Inc/ADCSensor.hpp:8:7:telemetry::ADCSensor::~ADCSensor()	0	static
+../Core/Inc/GPSSensor.hpp:30:10:virtual bool telemetry::GPSSensor::read()	8	static
+../Core/Inc/IMU.hpp:28:10:virtual bool telemetry::IMUSensor::read()	8	static
+../Core/Inc/IMU.hpp:23:10:virtual bool telemetry::IMUSensor::init()	0	static
+../Core/Inc/IMU.hpp:8:7:virtual telemetry::IMUSensor::~IMUSensor()	8	static
+../Core/Inc/GPSSensor.hpp:8:7:virtual telemetry::GPSSensor::~GPSSensor()	8	static
+../Core/Inc/ADCSensor.hpp:8:7:virtual telemetry::ADCSensor::~ADCSensor()	8	static
+../Core/Inc/GPSSensor.hpp:25:10:virtual bool telemetry::GPSSensor::init()	0	static
+../Core/Inc/ADCSensor.hpp:20:10:virtual bool telemetry::ADCSensor::read()	8	static
+../Core/Inc/ADCSensor.hpp:14:10:virtual bool telemetry::ADCSensor::init()	8	static
+../Core/Inc/GPS.hpp:12:8:constexpr telemetry::ConfigGPS::ConfigGPS()	8	static
+../Core/Inc/SensorManager.hpp:58:9:int telemetry::SensorManager::buildRow(uint32_t, char*, size_t)	112	static
+../Core/Src/MainTask.cpp:17:6:void telemetry::MainTask::run()	2672	static
+../Core/Src/MainTask.cpp:11:6:static void telemetry::MainTask::start(void*)	8	static
+../Core/Src/MainTask.cpp:102:6:void telemetry::BSP_PB_Callback(Button_TypeDef)	24	static,ignoring_inline_asm

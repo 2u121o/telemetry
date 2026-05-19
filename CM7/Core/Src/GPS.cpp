@@ -19,25 +19,34 @@ static GPS* s_gps_instance = nullptr;
 
 bool GPS::init()
 {
-  s_gps_instance = this;
+  s_gps_instance = this; 
+
+  HAL_UART_Transmit(&huart2, const_cast<uint8_t*>(config_gps_.UBX_CFG_PRT_115200),
+                    sizeof(config_gps_.UBX_CFG_PRT_115200), 100);
+  HAL_Delay(50);
+
+
+  huart2.Init.BaudRate = 115200;
+  HAL_UART_DeInit(&huart2);
+  HAL_UART_Init(&huart2);
+
 
   bool is_gnss_dmas_started = GNSSDMAStart();
   while(!is_gnss_dmas_started && num_tentative_start_ < NUM_MAX_TENTATIVE)
   {
-	  is_gnss_dmas_started = GNSSDMAStart();
-	  ++num_tentative_start_;
+      is_gnss_dmas_started = GNSSDMAStart();
+      ++num_tentative_start_;
   }
 
-  HAL_UART_Transmit(&huart2, const_cast<uint8_t*>(config_gps_.UBX_CFG_RATE_4HZ),
-                    sizeof(config_gps_.UBX_CFG_RATE_4HZ), 100);
-//  HAL_Delay(50);
+ 
+  HAL_UART_Transmit(&huart2, const_cast<uint8_t*>(config_gps_.UBX_CFG_RATE_25HZ),
+                    sizeof(config_gps_.UBX_CFG_RATE_25HZ), 100);
   HAL_UART_Transmit(&huart2, const_cast<uint8_t*>(config_gps_.UBX_MSG_GGA_UART1_1),
                     sizeof(config_gps_.UBX_MSG_GGA_UART1_1), 100);
   HAL_UART_Transmit(&huart2, const_cast<uint8_t*>(config_gps_.UBX_MSG_RMC_UART1_1),
                     sizeof(config_gps_.UBX_MSG_RMC_UART1_1), 100);
   HAL_UART_Transmit(&huart2, const_cast<uint8_t*>(config_gps_.UBX_MSG_VTG_UART1_1),
                     sizeof(config_gps_.UBX_MSG_VTG_UART1_1), 100);
-//  HAL_Delay(50);
   HAL_UART_Transmit(&huart2, const_cast<uint8_t*>(config_gps_.UBX_MSG_GLL_OFF),
                     sizeof(config_gps_.UBX_MSG_GLL_OFF), 100);
   HAL_UART_Transmit(&huart2, const_cast<uint8_t*>(config_gps_.UBX_MSG_GSA_OFF),
@@ -47,7 +56,6 @@ bool GPS::init()
   HAL_Delay(100);
   std::memset(nmea_ring_, 0, sizeof(nmea_ring_));
   rb_head_ = rb_tail_ = 0;
-
 
   return true;
 }

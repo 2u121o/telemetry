@@ -1,0 +1,7 @@
+../Core/Src/main.cpp:299:6:void UserDataTreatment(UART_HandleTypeDef*, uint8_t*, uint16_t)	3
+../Core/Src/main.cpp:348:1:int __io_putchar(int)	1
+../Core/Src/main.cpp:367:6:void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef*)	2
+../Core/Src/main.cpp:398:6:void Error_Handler()	1
+../Core/Src/main.cpp:212:6:void SystemClock_Config()	3
+../Core/Src/main.cpp:276:6:void PrintInfo(UART_HandleTypeDef*, uint8_t*, uint16_t)	1
+../Core/Src/main.cpp:89:5:int main()	1

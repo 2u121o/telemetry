@@ -1,0 +1,2 @@
+../Core/Src/adc3_init.cpp:10:6:void ADC3_PC2C_INP0_Init()	296	static
+../Core/Src/adc3_init.cpp:73:7:float ADC3_Read_V()	16	static

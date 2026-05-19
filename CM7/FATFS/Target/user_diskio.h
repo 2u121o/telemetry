@@ -16,8 +16,9 @@
   *
   ******************************************************************************
   */
-/* USER CODE END Header */
+ /* USER CODE END Header */
 
+/* Define to prevent recursive inclusion -------------------------------------*/
 #ifndef __USER_DISKIO_H
 #define __USER_DISKIO_H
 
@@ -25,11 +26,15 @@
  extern "C" {
 #endif
 
-#include "ff_gen_drv.h"   // definisce Diskio_drvTypeDef
-#include "sd_spi.h"       // prototipi sd_init, sd_read_block
+/* USER CODE BEGIN 0 */
 
-/* Exported driver structure */
-extern Diskio_drvTypeDef USER_Driver;
+/* Includes ------------------------------------------------------------------*/
+/* Exported types ------------------------------------------------------------*/
+/* Exported constants --------------------------------------------------------*/
+/* Exported functions ------------------------------------------------------- */
+extern Diskio_drvTypeDef  USER_Driver;
+
+/* USER CODE END 0 */
 
 #ifdef __cplusplus
 }

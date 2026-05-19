@@ -1,3 +1,219 @@
+# NUCLEO-H755ZI-Q [UART ReceptionToIdle]
+
+
+╔══════════════════════════════════════════════════════════════════════════════════╗
+║                    NUCLEO-H755ZI-Q — SCHEMA COLLEGAMENTI                       ║
+║                         STM32H755ZITx (LQFP144)                                ║
+╚══════════════════════════════════════════════════════════════════════════════════╝
+
+
+    ┌─────────────────────────────────────────────────────────────────────┐
+    │                        STM32H755ZI-Q                               │
+    │                                                                     │
+    │                                                                     │
+    │  ┌─── ETHERNET (RMII) ──────────────────────────────────────────┐  │
+    │  │                                                               │  │
+    │  │  PC1  ── ETH_MDC                                              │  │
+    │  │  PA1  ── ETH_REF_CLK          ┌───────────────┐              │  │
+    │  │  PA2  ── ETH_MDIO      ──────►│  PHY / RJ45   │              │  │
+    │  │  PA7  ── ETH_CRS_DV           │  (on-board)   │              │  │
+    │  │  PC4  ── ETH_RXD0             └───────────────┘              │  │
+    │  │  PC5  ── ETH_RXD1                                             │  │
+    │  │  PB13 ── ETH_TXD1                                             │  │
+    │  │  PG11 ── ETH_TX_EN                                            │  │
+    │  │  PG13 ── ETH_TXD0                                             │  │
+    │  │                                                               │  │
+    │  └───────────────────────────────────────────────────────────────┘  │
+    │                                                                     │
+    │                                                                     │
+    │  ┌─── USB OTG FS ───────────────────────────────────────────────┐  │
+    │  │                                                               │  │
+    │  │  PA8  ── USB_OTG_FS_SOF       ┌───────────────┐              │  │
+    │  │  PA9  ── USB_OTG_FS_VBUS ────►│  USB Micro-B  │              │  │
+    │  │  PA11 ── USB_OTG_FS_DM        │  (on-board)   │              │  │
+    │  │  PA12 ── USB_OTG_FS_DP        └───────────────┘              │  │
+    │  │  PD10 ── USB_PWR_EN                                           │  │
+    │  │  PG7  ── USB_OVCR (EXTI7, overcurrent detect)                │  │
+    │  │                                                               │  │
+    │  └───────────────────────────────────────────────────────────────┘  │
+    │                                                                     │
+    │                                                                     │
+    │  ┌─── USART3 (ST-Link VCP / Debug Console) ────────────────────┐  │
+    │  │                                                               │  │
+    │  │  PD8  ── USART3_TX            ┌───────────────┐              │  │
+    │  │  PD9  ── USART3_RX     ──────►│  ST-Link V3   │──► PC (USB) │  │
+    │  │                                │  (on-board)   │              │  │
+    │  │  Baud: 115200 (default)       └───────────────┘              │  │
+    │  │                                                               │  │
+    │  └───────────────────────────────────────────────────────────────┘  │
+    │                                                                     │
+    │                                                                     │
+    │  ┌─── USART2 (GPS u-blox) ─────────────────────────────────────┐  │
+    │  │                                                               │  │
+    │  │  PD5  ── USART2_TX            ┌───────────────┐              │  │
+    │  │  PA3  ── USART2_RX     ──────►│  GPS u-blox   │              │  │
+    │  │                                │  (UBX proto)  │              │  │
+    │  │  Baud: 9600 → 38400           │  NMEA+UBX     │              │  │
+    │  │  DMA1_Stream1 (RX circular)   │  4Hz rate     │              │  │
+    │  │                                └───────────────┘              │  │
+    │  │  Messaggi: GGA, RMC, VTG (on)                                 │  │
+    │  │            GLL, GSA, GSV (off)                                 │  │
+    │  │                                                               │  │
+    │  └───────────────────────────────────────────────────────────────┘  │
+    │                                                                     │
+    │                                                                     │
+    │  ┌─── I2C1 (IMU ISM330 / LSM6DSOX) ───────────────────────────┐  │
+    │  │                                                               │  │
+    │  │  PB7  ── I2C1_SDA             ┌───────────────┐              │  │
+    │  │  PB8  ── I2C1_SCL      ──────►│  ISM330DHCX   │              │  │
+    │  │                                │  (IMU 6-axis) │              │  │
+    │  │  Addr: 0x6B (o 0x6A)          │  Accel+Gyro   │              │  │
+    │  │  Rate: 104 Hz                 │  ±2g / 2000dps│              │  │
+    │  │  WHO_AM_I: 0x6B               └───────────────┘              │  │
+    │  │                                                               │  │
+    │  └───────────────────────────────────────────────────────────────┘  │
+    │                                                                     │
+    │                                                                     │
+    │  ┌─── SPI1 + CS (SD Card) ─────────────────────────────────────┐  │
+    │  │                                                               │  │
+    │  │  PA5  ── SPI1_SCK             ┌───────────────┐              │  │
+    │  │  PA6  ── SPI1_MISO (pull-up)  │  MicroSD Card │              │  │
+    │  │  PD7  ── SPI1_MOSI     ──────►│  (SPI mode)   │              │  │
+    │  │  PA4  ── CS (GPIO Output)     │  FATFS        │              │  │
+    │  │          (active LOW)         └───────────────┘              │  │
+    │  │                                                               │  │
+    │  │  Baud: ~390 KHz (prescaler 256)                               │  │
+    │  │  Log: timestamp,ax,ay,az,wx,wy,wz,lat,lon,alt,travel         │  │
+    │  │                                                               │  │
+    │  └───────────────────────────────────────────────────────────────┘  │
+    │                                                                     │
+    │                                                                     │
+    │  ┌─── ADC3 (Sensore Corsa Sospensione) ────────────────────────┐  │
+    │  │                                                               │  │
+    │  │  PC2_C ── ADC3_INP0 (analog)  ┌───────────────┐              │  │
+    │  │           (A4 su Nucleo) ────►│  Potenziometro │              │  │
+    │  │                                │  lineare /     │              │  │
+    │  │  12-bit, single-ended         │  sensore corsa │              │  │
+    │  │  Lettura: 0 ~ 3.3V           │  sospensione   │              │  │
+    │  │                                │  posteriore    │              │  │
+    │  │                                └───────────────┘              │  │
+    │  └───────────────────────────────────────────────────────────────┘  │
+    │                                                                     │
+    │                                                                     │
+    │  ┌─── LED ON-BOARD (BSP) ──────────────────────────────────────┐  │
+    │  │                                                               │  │
+    │  │  PB0  ── LED1 (GREEN)   🟢                                   │  │
+    │  │  PE1  ── LED2 (YELLOW)  🟡                                   │  │
+    │  │  PB14 ── LED3 (RED)     🔴                                   │  │
+    │  │                                                               │  │
+    │  └───────────────────────────────────────────────────────────────┘  │
+    │                                                                     │
+    │                                                                     │
+    │  ┌─── PULSANTE ON-BOARD (BSP) ─────────────────────────────────┐  │
+    │  │                                                               │  │
+    │  │  PC13 ── USER Button (EXTI13, active LOW)                     │  │
+    │  │          → Ferma registrazione dati su SD                     │  │
+    │  │                                                               │  │
+    │  └───────────────────────────────────────────────────────────────┘  │
+    │                                                                     │
+    │                                                                     │
+    │  ┌─── OSCILLATORI (on-board) ──────────────────────────────────┐  │
+    │  │                                                               │  │
+    │  │  PH0  ── HSE_IN  (oscillatore principale)                     │  │
+    │  │  PH1  ── HSE_OUT                                              │  │
+    │  │  PC14 ── LSE_IN  (32.768 kHz)                                 │  │
+    │  │  PC15 ── LSE_OUT                                              │  │
+    │  │                                                               │  │
+    │  └───────────────────────────────────────────────────────────────┘  │
+    │                                                                     │
+    └─────────────────────────────────────────────────────────────────────┘
+
+
+╔══════════════════════════════════════════════════════════════════════════════════╗
+║  RIEPILOGO PIN OCCUPATI (35 pin)                                               ║
+╠══════════╦════════════════════╦════════════════════════════════════════════════╣
+║  PIN     ║  TIPO              ║  FUNZIONE                                     ║
+╠══════════╬════════════════════╬════════════════════════════════════════════════╣
+║  PA1     ║  AF11 (ETH)        ║  ETH_REF_CLK                                 ║
+║  PA2     ║  AF11 (ETH)        ║  ETH_MDIO                                    ║
+║  PA3     ║  AF7  (USART2)     ║  USART2_RX  ← GPS                            ║
+║  PA4     ║  GPIO Output       ║  SD Card CS (active LOW)                      ║
+║  PA5     ║  AF5  (SPI1)       ║  SPI1_SCK   → SD Card                        ║
+║  PA6     ║  AF5  (SPI1)       ║  SPI1_MISO  ← SD Card                        ║
+║  PA7     ║  AF11 (ETH)        ║  ETH_CRS_DV                                  ║
+║  PA8     ║  AF10 (USB)        ║  USB_OTG_FS_SOF                              ║
+║  PA9     ║  AF10 (USB)        ║  USB_OTG_FS_VBUS                             ║
+║  PA11    ║  AF10 (USB)        ║  USB_OTG_FS_DM                               ║
+║  PA12    ║  AF10 (USB)        ║  USB_OTG_FS_DP                               ║
+║  PB0     ║  GPIO Output       ║  LED1 GREEN  🟢                              ║
+║  PB7     ║  AF4  (I2C1)       ║  I2C1_SDA   ↔ IMU                            ║
+║  PB8     ║  AF4  (I2C1)       ║  I2C1_SCL   → IMU                            ║
+║  PB13    ║  AF11 (ETH)        ║  ETH_TXD1                                    ║
+║  PB14    ║  GPIO Output       ║  LED3 RED    🔴                              ║
+║  PC1     ║  AF11 (ETH)        ║  ETH_MDC                                     ║
+║  PC2_C   ║  Analog            ║  ADC3_INP0 ← Sensore corsa sospensione       ║
+║  PC4     ║  AF11 (ETH)        ║  ETH_RXD0                                    ║
+║  PC5     ║  AF11 (ETH)        ║  ETH_RXD1                                    ║
+║  PC13    ║  GPIO Input (EXTI) ║  USER Button → stop registrazione             ║
+║  PC14    ║  RCC               ║  OSC32_IN                                     ║
+║  PC15    ║  RCC               ║  OSC32_OUT                                    ║
+║  PD5     ║  AF7  (USART2)     ║  USART2_TX  → GPS                            ║
+║  PD7     ║  AF5  (SPI1)       ║  SPI1_MOSI  → SD Card                        ║
+║  PD8     ║  AF7  (USART3)     ║  USART3_TX  → ST-Link VCP                    ║
+║  PD9     ║  AF7  (USART3)     ║  USART3_RX  ← ST-Link VCP                    ║
+║  PD10    ║  GPIO Output       ║  USB_OTG_FS_PWR_EN                           ║
+║  PE1     ║  GPIO Output       ║  LED2 YELLOW 🟡                              ║
+║  PG7     ║  GPIO EXTI7        ║  USB_OTG_FS_OVCR                             ║
+║  PG11    ║  AF11 (ETH)        ║  ETH_TX_EN                                   ║
+║  PG13    ║  AF11 (ETH)        ║  ETH_TXD0                                    ║
+║  PH0     ║  RCC               ║  HSE_IN                                       ║
+║  PH1     ║  RCC               ║  HSE_OUT                                      ║
+╠══════════╩════════════════════╩════════════════════════════════════════════════╣
+║                                                                                ║
+║  SOFTWARE: FreeRTOS (CMSIS v2) — MainTask logga a 200Hz su SD:                ║
+║    timestamp, ax, ay, az, wx, wy, wz, lat, lon, alt_m, travel_rear_volt       ║
+║    USER Button (PC13) → notifica task → chiude file e ferma log                ║
+║                                                                                ║
+╚══════════════════════════════════════════════════════════════════════════════════╝
+
+
+    SCHEMA A BLOCCHI FISICO:
+
+                                ┌──────────┐
+                                │  GPS     │
+                                │  u-blox  │
+                                │          │
+                                │ TX ── PA3│ (USART2_RX)
+                                │ RX ── PD5│ (USART2_TX)
+                                │ VCC  GND │
+                                └──────────┘
+
+    ┌──────────┐                                        ┌──────────┐
+    │ IMU      │                                        │ SD Card  │
+    │ISM330DHCX│                                        │ (SPI)    │
+    │          │                                        │          │
+    │ SDA ─ PB7│ (I2C1)                          PA5 ──│ CLK      │
+    │ SCL ─ PB8│                                 PA6 ──│ MISO     │
+    │ VCC  GND │                                 PD7 ──│ MOSI     │
+    └──────────┘                                 PA4 ──│ CS       │
+                                                       │ VCC  GND │
+    ┌──────────────┐                                   └──────────┘
+    │ Sensore Corsa│
+    │ Sospensione  │
+    │ (posteriore) │                    ┌──────────────────────────┐
+    │              │                    │  NUCLEO-H755ZI-Q         │
+    │ OUT ── PC2_C │ (ADC3)            │                          │
+    │ VCC     GND  │                    │  🟢 PB0  (LED GREEN)    │
+    └──────────────┘                    │  🟡 PE1  (LED YELLOW)   │
+                                        │  🔴 PB14 (LED RED)      │
+                                        │  🔘 PC13 (USER BUTTON)  │
+                                        │                          │
+                                        │  [ETH RJ45] [USB] [VCP] │
+                                        └──────────────────────────┘
+
+
+
+
 ╔══════════════════════════════════════════════════════════════════════════════════╗
 ║          SCHEMA COMPLETO AGGIORNATO — NUOVI SENSORI DA AGGIUNGERE              ║
 ║                         NUCLEO-H755ZI-Q                                        ║

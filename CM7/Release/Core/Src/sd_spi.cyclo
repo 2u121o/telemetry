@@ -1,0 +1,9 @@
+../Core/Src/sd_spi.c:12:20:SD_CS_H	1
+../Core/Src/sd_spi.c:11:20:SD_CS_L	1
+../Core/Src/sd_spi.c:35:16:spi_txrx	1
+../Core/Src/sd_spi.c:41:16:sd_cmd_raw.isra	3
+../Core/Src/sd_spi.c:66:16:sd_cmd.isra	1
+../Core/Src/sd_spi.c:83:6:sd_idle_clocks	2
+../Core/Src/sd_spi.c:90:5:sd_init	8
+../Core/Src/sd_spi.c:153:5:sd_write_block	7
+../Core/Src/sd_spi.c:200:6:sd_read_block	7

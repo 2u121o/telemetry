@@ -1,0 +1,5 @@
+# Prepend GNU Tools for STM32 to PATH (terminal `make`). CubeIDE may regenerate this file.
+STM32_GCC_BIN := $(shell ls -d /opt/st/stm32cubeide_*/plugins/com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32*.linux64_*/tools/bin 2>/dev/null | head -1)
+ifneq ($(STM32_GCC_BIN),)
+export PATH := $(STM32_GCC_BIN):$(PATH)
+endif

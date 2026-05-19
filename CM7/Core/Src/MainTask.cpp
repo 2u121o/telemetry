@@ -19,60 +19,78 @@ void MainTask::run()
 
 	MX_I2C1_Init();
 
-//	HAL_Delay();
-	bool ret_init_acc = accelerometer_.init(&hi2c1);
-	if(gps_.init())
-	{
+	IMUSensor   imu_sensor(1, &hi2c1, "imu1");           
+    GPSSensor   gps_sensor(40);                  
+    ADCSensor   adc_rear(1, "travel_r_v");    
+	
+	SensorManager mgr;
+    mgr.addSensor(&imu_sensor);
+    mgr.addSensor(&gps_sensor);
+    mgr.addSensor(&adc_rear);
+    mgr.initAll();
 
-	}
+	GPSData gps_data;
+	do {
+		gps_sensor.read();
+		gps_sensor.gpsDriver().readData(&gps_data); 
+		vTaskDelay(pdMS_TO_TICKS(500));
+	} while (!gps_data.have_date || gps_data.fix == 0);
+	char file_name[32];
+	snprintf(file_name, sizeof(file_name), "%.6s_%.6s", gps_data.date, gps_data.utc_hms);
 
-	char* file_name = "logaccgps";
-	char* header = "timestamp, ax, ay, az, wx, wy, wz, lat, lon, alt_m, travel_r_v\r\n";
-	if(!data_writer_.init(file_name, header))
-	{
-
-	}
-
-	ADC3_PC2C_INP0_Init();
+	char header[256];
+    mgr.buildHeader(header, sizeof(header));
+	data_writer_.init(file_name, header);
 
 	bool is_registration_stopped = false;
 
-	uint32_t ts_ms;
+	static constexpr size_t BATCH_BUF_SZ = 4096;   
+	static constexpr size_t FLUSH_THRESHOLD = 3072; 
+
+	static char batch_buf[BATCH_BUF_SZ];
+	size_t batch_pos = 0;
+
 
 	while(true)
 	{
 		if(is_registration_stopped) continue;
 
-		ts_ms = HAL_GetTick();
+		uint32_t ts = HAL_GetTick();
+        mgr.readAll(ts);
 
-		HAL_StatusTypeDef ret_read = accelerometer_.readData(&imu_values_);
-		if(ret_read != HAL_OK)
+        char row[256];
+		int row_len = mgr.buildRow(ts, row, sizeof(row));
+
+		if (row_len > 0 && (batch_pos + row_len) < BATCH_BUF_SZ)
 		{
-//			printf("data not read\r\n");
+			memcpy(batch_buf + batch_pos, row, row_len);
+			batch_pos += row_len;
 		}
 
-		gps_.readData(&gps_data_);
+		if (batch_pos >= FLUSH_THRESHOLD)
+		{
+			batch_buf[batch_pos] = '\0';
+			data_writer_.writeBatch(batch_buf);
+			batch_pos = 0;
+		}
 
-	    float volt_travel_rear = ADC3_Read_V();
-		int n = snprintf(data, sizeof(data),
-		                     "%lu,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.14f,%.14f,%.6f,%.6f\r\n",
-		                     (unsigned long)ts_ms, (double)imu_values_.ax, (double)imu_values_.ay, (double)imu_values_.az,
-							 	 	 	 	 	   (double)imu_values_.wx, (double)imu_values_.wy, (double)imu_values_.wz,
-												   (double)gps_data_.lat, (double)gps_data_.lon, (double)gps_data_.alt_m, volt_travel_rear);
-
-		if (n > 0) data_writer_.writeBatch(data);
 		uint32_t notif = 0;
 		if (xTaskNotifyWait(0, 0xFFFFFFFF, &notif, 0) == pdTRUE)
 		{
 			if (notif & EVT_BTN1)
 			{
+				if (batch_pos > 0)
+				{
+					batch_buf[batch_pos] = '\0';
+					data_writer_.writeBatch(batch_buf);
+					batch_pos = 0;
+				}
 				data_writer_.close();
 				is_registration_stopped = true;
-				ts_ms = 0;
 			}
 		}
 
-		vTaskDelay(pdMS_TO_TICKS(5));
+		vTaskDelay(pdMS_TO_TICKS(1));
 	}
 }
 
