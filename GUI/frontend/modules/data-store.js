@@ -54,6 +54,8 @@ const DataStore = (() => {
   // ---- Column metadata detection ----
   // Maps raw CSV column names → canonical names used throughout the GUI.
   const COLUMN_ALIASES = {
+    time: 'timestamp',
+    timestamp: 'timestamp',
     timestamp_ns: 'timestamp',
     timestamp_ms: 'timestamp',
     gps_lat_deg: 'lat',
@@ -67,12 +69,25 @@ const DataStore = (() => {
     gps_fix_quality: 'fix_quality',
     ax_g: 'ax', ay_g: 'ay', az_g: 'az',
     wx_dps: 'wx', wy_dps: 'wy', wz_dps: 'wz',
+    accx: 'ax', accy: 'ay', accz: 'az',
+    gyrox: 'wx', gyroy: 'wy', gyroz: 'wz',
+    latitude: 'lat',
+    longitude: 'lon',
+    altitude: 'alt_m',
+    gpsspeed: 'gps_speed',
+    susp1: 'susp1',
+    susp2: 'susp2',
+    brake1: 'brake1',
+    brake2: 'brake2',
+    speed1: 'speed1',
     travel1_v: 'travel_r_v',
     travel2_v: 'travel_f_v',
   };
 
   // Divisor to convert timestamp column to seconds (keyed by original column name).
   const TIMESTAMP_SCALES = {
+    time: 1,
+    timestamp: 1,
     timestamp_ns: 1_000_000_000,
     timestamp_ms: 1_000,
   };
@@ -111,11 +126,17 @@ const DataStore = (() => {
     lat: '°', lon: '°',
     alt_m: 'm',
     speed_kn: 'kn',
+    gps_speed: '',
     course_deg: '°',
     sats: '',
     hdop: '',
     fix: '',
     fix_quality: '',
+    susp1: '',
+    susp2: '',
+    brake1: '',
+    brake2: '',
+    speed1: '',
     travel_r_v: 'V',
     travel_r_mm: 'mm',
     travel_r_pct: '%',
@@ -133,11 +154,17 @@ const DataStore = (() => {
     lat: 'Latitudine', lon: 'Longitudine',
     alt_m: 'Altitudine',
     speed_kn: 'Velocità GPS',
+    gps_speed: 'Velocità GPS',
     course_deg: 'Rotta',
     sats: 'Satelliti',
     hdop: 'HDOP',
     fix: 'GPS Fix',
     fix_quality: 'Qualità GPS',
+    susp1: 'Sospensione 1',
+    susp2: 'Sospensione 2',
+    brake1: 'Freno 1',
+    brake2: 'Freno 2',
+    speed1: 'Velocità 1',
     travel_r_v: 'Travel Posteriore (V)',
     travel_r_mm: 'Travel Posteriore (mm)',
     travel_r_pct: 'Travel Posteriore (%)',
@@ -175,11 +202,44 @@ const DataStore = (() => {
   }
 
   // ---- Parser ----
+  function normalizeRawColumnName(name) {
+    return name.trim().replace(/\s+/g, '_').toLowerCase();
+  }
+
+  function splitRow(line, delimiter) {
+    const parts = line.split(delimiter).map(part => part.trim());
+    while (parts.length > 0 && parts[parts.length - 1] === '') {
+      parts.pop();
+    }
+    return parts;
+  }
+
+  function detectDelimiter(lines) {
+    const timestampColumns = new Set(['time', 'timestamp', 'timestamp_ns', 'timestamp_ms']);
+    const headerLike = lines.find(line => {
+      const firstSemicolonCell = line.split(';')[0]?.trim().toLowerCase();
+      const firstCommaCell = line.split(',')[0]?.trim().toLowerCase();
+      return timestampColumns.has(firstSemicolonCell) || timestampColumns.has(firstCommaCell);
+    }) || lines[0];
+    return headerLike.split(';').length > headerLike.split(',').length ? ';' : ',';
+  }
+
+  function findHeaderIndex(lines, delimiter) {
+    const timestampColumns = new Set(['time', 'timestamp', 'timestamp_ns', 'timestamp_ms']);
+    const index = lines.findIndex(line => {
+      const firstCell = splitRow(line, delimiter)[0]?.trim().toLowerCase();
+      return timestampColumns.has(firstCell);
+    });
+    return index >= 0 ? index : 0;
+  }
+
   function parseCSV(text) {
-    const lines = text.trim().split('\n');
+    const lines = text.trim().replace(/\r/g, '').split('\n');
     if (lines.length < 2) throw new Error('File vuoto o formato non valido');
 
-    const rawHeader = lines[0].split(',').map(h => h.trim().replace(/\s+/g, '_'));
+    const delimiter = detectDelimiter(lines);
+    const headerIndex = findHeaderIndex(lines, delimiter);
+    const rawHeader = splitRow(lines[headerIndex], delimiter).map(normalizeRawColumnName);
 
     // Determine timestamp scale from original column name; fall back to settings.
     let tsScale = null;
@@ -205,15 +265,15 @@ const DataStore = (() => {
 
     const data = [];
 
-    for (let i = 1; i < lines.length; i++) {
+    for (let i = headerIndex + 1; i < lines.length; i++) {
       const line = lines[i].trim();
       if (!line) continue;
-      const parts = line.split(',');
-      if (parts.length !== rawHeader.length) continue;
+      const parts = splitRow(line, delimiter);
+      if (parts.length < rawHeader.length) continue;
 
       const row = {};
       for (let j = 0; j < header.length; j++) {
-        const val = parts[j].trim();
+        const val = parts[j].trim().replace(',', '.');
         let num = val === '' ? null : Number(val);
         if (header[j] === 'timestamp' && num !== null && tsScale) {
           num = num / tsScale;

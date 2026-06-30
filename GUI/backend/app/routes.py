@@ -737,6 +737,8 @@ def _binary_to_csv_text(content: bytes) -> str:
 
 # Maps raw CSV column names → canonical names used by the GUI.
 _COLUMN_ALIASES: dict[str, str] = {
+    "time": "timestamp",
+    "timestamp": "timestamp",
     "timestamp_ns": "timestamp",
     "timestamp_ms": "timestamp",
     "gps_lat_deg":  "lat",
@@ -750,24 +752,71 @@ _COLUMN_ALIASES: dict[str, str] = {
     "gps_fix_quality": "fix_quality",
     "ax_g": "ax", "ay_g": "ay", "az_g": "az",
     "wx_dps": "wx", "wy_dps": "wy", "wz_dps": "wz",
+    "accx": "ax", "accy": "ay", "accz": "az",
+    "gyrox": "wx", "gyroy": "wy", "gyroz": "wz",
+    "latitude": "lat",
+    "longitude": "lon",
+    "altitude": "alt_m",
+    "gpsspeed": "gps_speed",
+    "susp1": "susp1",
+    "susp2": "susp2",
+    "brake1": "brake1",
+    "brake2": "brake2",
+    "speed1": "speed1",
     "travel1_v": "travel_r_v",
     "travel2_v": "travel_f_v",
 }
 
 # Divisor to convert the raw timestamp column value to seconds.
 _TIMESTAMP_SCALES: dict[str, float] = {
+    "time": 1.0,
+    "timestamp": 1.0,
     "timestamp_ns": 1_000_000_000.0,
     "timestamp_ms": 1_000.0,
 }
 
 
+def _normalize_csv_column(name: str) -> str:
+    return name.strip().replace(" ", "_").lower()
+
+
+def _split_csv_row(line: str, delimiter: str) -> list[str]:
+    parts = [part.strip() for part in line.split(delimiter)]
+    while parts and parts[-1] == "":
+        parts.pop()
+    return parts
+
+
+def _detect_csv_delimiter(lines: list[str]) -> str:
+    header_like = next(
+        (
+            line for line in lines
+            if _split_csv_row(line, ";")[0].lower() in {"time", "timestamp", "timestamp_ns", "timestamp_ms"}
+            or _split_csv_row(line, ",")[0].lower() in {"time", "timestamp", "timestamp_ns", "timestamp_ms"}
+        ),
+        lines[0],
+    )
+    return ";" if header_like.count(";") > header_like.count(",") else ","
+
+
+def _find_csv_header_index(lines: list[str], delimiter: str) -> int:
+    for index, line in enumerate(lines):
+        parts = _split_csv_row(line, delimiter)
+        first_cell = parts[0].lower() if parts else ""
+        if first_cell in {"time", "timestamp", "timestamp_ns", "timestamp_ms"}:
+            return index
+    return 0
+
+
 def _parse_csv(text: str, sensor_settings: dict | None = None) -> tuple[list[str], list[dict]]:
     """Parse CSV text into (columns, rows). Applies column aliasing and timestamp conversion."""
-    lines = text.strip().split("\n")
+    lines = text.strip().replace("\r", "").split("\n")
     if len(lines) < 2:
         raise HTTPException(400, "File vuoto o formato non valido")
 
-    raw_header = [h.strip().replace(" ", "_") for h in lines[0].split(",")]
+    delimiter = _detect_csv_delimiter(lines)
+    header_index = _find_csv_header_index(lines, delimiter)
+    raw_header = [_normalize_csv_column(h) for h in _split_csv_row(lines[header_index], delimiter)]
 
     # Determine timestamp scaling from original column name; fallback to sensor_settings.
     ts_scale: float | None = None
@@ -792,16 +841,16 @@ def _parse_csv(text: str, sensor_settings: dict | None = None) -> tuple[list[str
 
     data = []
 
-    for i in range(1, len(lines)):
+    for i in range(header_index + 1, len(lines)):
         line = lines[i].strip()
         if not line:
             continue
-        parts = line.split(",")
-        if len(parts) != len(raw_header):
+        parts = _split_csv_row(line, delimiter)
+        if len(parts) < len(raw_header):
             continue
         row = {}
         for j, col in enumerate(header):
-            val = parts[j].strip()
+            val = parts[j].strip().replace(",", ".")
             if val == "":
                 row[col] = None
             else:
