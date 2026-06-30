@@ -82,10 +82,18 @@ class SetupOut(SetupCreate):
 
 
 # ===== Runs =====
+class SplitLineSegment(BaseModel):
+    start: dict
+    end: dict
+    center: dict
+    bearing: float
+
+
 class SplitsData(BaseModel):
     start: Optional[float] = None
     end: Optional[float] = None
     intermediates: list[float] = Field(default_factory=list)
+    line_segments: dict = Field(default_factory=lambda: {"start": None, "end": None, "intermediates": []})
 
 
 class RunNotesData(BaseModel):

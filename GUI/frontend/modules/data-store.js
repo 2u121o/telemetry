@@ -25,8 +25,17 @@ const DataStore = (() => {
   let fileName = '';
 
   // ---- Splits state ----
-  // splits = { start: timestampSec|null, end: timestampSec|null, intermediates: [timestampSec, ...] }
-  let splits = { start: null, end: null, intermediates: [] };
+  // splits = {
+  //   start: timestampSec|null,
+  //   end: timestampSec|null,
+  //   intermediates: [timestampSec, ...],
+  //   line_segments: {
+  //     start: { start: {lat,lon}, end: {lat,lon}, center: {lat,lon}, bearing },
+  //     end: {...},
+  //     intermediates: [{...}, ...]
+  //   }
+  // }
+  let splits = { start: null, end: null, intermediates: [], line_segments: { start: null, end: null, intermediates: [] } };
   let splitsEnabled = false; // when true, data is trimmed to start..end
 
   // ---- Cursor state ----
@@ -178,18 +187,38 @@ const DataStore = (() => {
   function computeColumnMeta(data, cols) {
     const meta = {};
     for (const col of cols) {
-      const values = data.map(r => r[col]).filter(v => v !== null && v !== undefined && !isNaN(v));
-      const n = values.length;
+      let min = 0;
+      let max = 0;
+      let sum = 0;
+      let sumSq = 0;
+      let n = 0;
+
+      for (let i = 0; i < data.length; i++) {
+        const value = data[i][col];
+        if (value === null || value === undefined || Number.isNaN(value)) continue;
+        const num = Number(value);
+        if (!Number.isFinite(num)) continue;
+
+        if (n === 0) {
+          min = max = num;
+        } else {
+          if (num < min) min = num;
+          if (num > max) max = num;
+        }
+
+        sum += num;
+        sumSq += num * num;
+        n += 1;
+      }
+
       if (n === 0) {
         meta[col] = { min: 0, max: 0, mean: 0, std: 0, unit: KNOWN_UNITS[col] || '', label: KNOWN_LABELS[col] || col, type: 'numeric' };
         continue;
       }
-      const min = Math.min(...values);
-      const max = Math.max(...values);
-      const sum = values.reduce((a, b) => a + b, 0);
+
       const mean = sum / n;
-      const variance = values.reduce((a, v) => a + (v - mean) ** 2, 0) / n;
-      const std = Math.sqrt(variance);
+      const variance = sumSq / n - mean * mean;
+      const std = Math.sqrt(Math.max(0, variance));
       meta[col] = {
         min, max, mean, std,
         unit: KNOWN_UNITS[col] || '',
@@ -416,8 +445,8 @@ const DataStore = (() => {
     columns = result.columns;
     fileName = name;
 
-    // Reset splits
-    splits = { start: null, end: null, intermediates: [] };
+    // Reset splits, including any saved line segments
+    splits = { start: null, end: null, intermediates: [], line_segments: { start: null, end: null, intermediates: [] } };
     splitsEnabled = false;
     filters = [];
     cursorIndex = -1;
@@ -554,11 +583,36 @@ const DataStore = (() => {
 
   // ---- Splits ----
   function setSplits(newSplits) {
-    splits = { ...splits, ...newSplits };
+    const merged = { ...splits, ...newSplits };
+    if (newSplits.line_segments !== undefined) {
+      merged.line_segments = {
+        start: newSplits.line_segments.start ?? splits.line_segments.start,
+        end: newSplits.line_segments.end ?? splits.line_segments.end,
+        intermediates: Array.isArray(newSplits.line_segments.intermediates)
+          ? newSplits.line_segments.intermediates
+          : [...splits.line_segments.intermediates],
+      };
+    } else {
+      merged.line_segments = { ...splits.line_segments };
+    }
+
+    // Preserve line_segments array length when intermediates are updated,
+    // so old segment geometries remain aligned by index where possible.
+    if (newSplits.intermediates !== undefined && !newSplits.line_segments) {
+      const newInts = Array.isArray(newSplits.intermediates) ? newSplits.intermediates : [];
+      merged.line_segments.intermediates = merged.line_segments.intermediates.slice(0, newInts.length);
+    }
+
+    splits = merged;
+
     // Clean intermediates: sort and remove nulls
     if (splits.intermediates) {
       splits.intermediates = splits.intermediates.filter(v => v !== null && !isNaN(v)).sort((a, b) => a - b);
     }
+    if (splits.line_segments && Array.isArray(splits.line_segments.intermediates)) {
+      splits.line_segments.intermediates = splits.line_segments.intermediates.slice(0, splits.intermediates.length);
+    }
+
     // Always recompute: data is trimmed to start..end when splits are set
     recomputeFiltered();
     emit('splits-changed', { splits, enabled: splitsEnabled });

@@ -59,6 +59,17 @@ source venv/bin/activate
 python3 -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
+Windows
+```bash
+C:\Users\zurlo\Documents\GitHub\telemetry\GUI\backend
+.\venv\Scripts\python.exe -m pip install -r requirements.txt
+.\venv\Scripts\python.exe -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+```
+
+Poi apri:
+
+http://localhost:8000/
+
 ### Accesso
 
 | Pagina | URL |
@@ -718,3 +729,5 @@ cd GUI/backend && ./run.sh
 - Analisi automatica delle sospensioni
 - Confronto automatico settori
 - Export PDF/report
+
+

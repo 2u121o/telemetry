@@ -116,6 +116,105 @@ const MapView = (() => {
     placementBtns.cancel?.addEventListener('click', () => setPlacementMode('none'));
   }
 
+  function getSplitLineLocation(type, splitInfo, idx) {
+    const splits = DataStore.getSplits();
+    if (!splits.line_segments) return null;
+    if (type === 'start' || type === 'end') {
+      return splits.line_segments[type] || null;
+    }
+    return splits.line_segments.intermediates?.[idx] || null;
+  }
+
+  function saveSplitLineLocation(type, lineSegment, idx) {
+    const splits = DataStore.getSplits();
+    const existingSegments = splits.line_segments || { start: null, end: null, intermediates: [] };
+    const newSegments = {
+      start: existingSegments.start,
+      end: existingSegments.end,
+      intermediates: Array.isArray(existingSegments.intermediates) ? [...existingSegments.intermediates] : [],
+    };
+
+    if (type === 'start' || type === 'end') {
+      newSegments[type] = lineSegment;
+    } else if (type === 'intermediate' && idx !== undefined) {
+      newSegments.intermediates[idx] = lineSegment;
+    }
+
+    DataStore.setSplits({ line_segments: newSegments });
+  }
+
+  function getTrackPerpendicularBearing(lat, lon) {
+    const row = DataStore.findNearestGPSRow(lat, lon);
+    if (!row || !row.timestamp || allGpsPoints.length === 0) return 90;
+
+    let idx = -1;
+    let bestDist = Infinity;
+    for (let i = 0; i < allGpsPoints.length; i++) {
+      const d = Math.abs(allGpsPoints[i].timestamp - row.timestamp);
+      if (d < bestDist) {
+        bestDist = d;
+        idx = i;
+      }
+    }
+    if (idx < 0) return 90;
+
+    const prev = allGpsPoints[Math.max(0, idx - 3)];
+    const next = allGpsPoints[Math.min(allGpsPoints.length - 1, idx + 3)];
+    const dLat = next.lat - prev.lat;
+    const dLon = next.lon - prev.lon;
+    const heading = Math.atan2(dLon, dLat) * 180 / Math.PI;
+    return (heading + 90 + 360) % 360;
+  }
+
+  function createSplitLineSegmentFromCenter(lat, lon, lengthMeters, bearingDeg = null) {
+    const half = lengthMeters / 2;
+    const latRad = lat * Math.PI / 180;
+    if (bearingDeg === null) {
+      bearingDeg = getTrackPerpendicularBearing(lat, lon);
+    }
+    const bearingRad = bearingDeg * Math.PI / 180;
+    const deltaLat = (half * Math.cos(bearingRad)) / 111320;
+    const deltaLon = (half * Math.sin(bearingRad)) / (111320 * Math.cos(latRad));
+    return {
+      start: { lat: lat - deltaLat, lon: lon - deltaLon },
+      end: { lat: lat + deltaLat, lon: lon + deltaLon },
+      center: { lat, lon },
+      bearing: bearingDeg,
+    };
+  }
+
+  function ensureSplitLineLocation(location, lengthMeters) {
+    if (!location) return null;
+    if (location.start && location.end) {
+      return location;
+    }
+    if (location.lat !== undefined && location.lon !== undefined) {
+      return createSplitLineSegmentFromCenter(location.lat, location.lon, lengthMeters);
+    }
+    return null;
+  }
+
+  function getSplitLineCenter(location) {
+    if (!location) return null;
+    if (location.center) return location.center;
+    if (location.start && location.end) {
+      return {
+        lat: (location.start.lat + location.end.lat) / 2,
+        lon: (location.start.lon + location.end.lon) / 2,
+      };
+    }
+    return null;
+  }
+
+  function getSplitLineLatLngs(location, lengthMeters) {
+    const segment = ensureSplitLineLocation(location, lengthMeters);
+    if (!segment) return null;
+    return [
+      [segment.start.lat, segment.start.lon],
+      [segment.end.lat, segment.end.lon],
+    ];
+  }
+
   function setPlacementMode(mode) {
     placementMode = mode;
 
@@ -248,24 +347,36 @@ const MapView = (() => {
     if (placementMode === 'none') return;
     if (allGpsPoints.length === 0) return;
 
-    const row = DataStore.findNearestGPSRow(e.latlng.lat, e.latlng.lng);
+    const clickedLatLng = e.latlng;
+    const row = DataStore.findNearestGPSRow(clickedLatLng.lat, clickedLatLng.lng);
     if (!row || !row.timestamp) return;
 
     const timestamp = row.timestamp;
     const splits = DataStore.getSplits();
 
     if (placementMode === 'start') {
-      DataStore.setSplits({ start: timestamp });
+      const lineSegment = createSplitLineSegmentFromCenter(clickedLatLng.lat, clickedLatLng.lng, getSetting('map_splitLineLength', 6));
+      DataStore.setSplits({ start: timestamp, line_segments: { start: lineSegment } });
       showToast(`Partenza impostata (0.000s)`, 'success');
       setPlacementMode('none');
     } else if (placementMode === 'end') {
-      DataStore.setSplits({ end: timestamp });
+      const lineSegment = createSplitLineSegmentFromCenter(clickedLatLng.lat, clickedLatLng.lng, getSetting('map_splitLineLength', 6));
+      DataStore.setSplits({ end: timestamp, line_segments: { end: lineSegment } });
       const relTime = DataStore.toRelativeTime(timestamp);
       showToast(`Arrivo impostato a ${relTime.toFixed(3)}s`, 'success');
       setPlacementMode('none');
     } else if (placementMode === 'intermediate') {
       const newInts = [...(splits.intermediates || []), timestamp];
-      DataStore.setSplits({ intermediates: newInts });
+      const existingSegments = splits.line_segments || { start: null, end: null, intermediates: [] };
+      const nextIndex = newInts.length - 1;
+      const newSegment = createSplitLineSegmentFromCenter(clickedLatLng.lat, clickedLatLng.lng, getSetting('map_splitLineLength', 6));
+      const nextSegments = {
+        start: existingSegments.start,
+        end: existingSegments.end,
+        intermediates: [...(existingSegments.intermediates || [])],
+      };
+      nextSegments.intermediates[nextIndex] = newSegment;
+      DataStore.setSplits({ intermediates: newInts, line_segments: { ...nextSegments } });
       const relTime = DataStore.toRelativeTime(timestamp);
       showToast(`Intermedio aggiunto a ${relTime.toFixed(3)}s`, 'success');
     }
@@ -281,25 +392,22 @@ const MapView = (() => {
       return;
     }
 
-    const row = DataStore.findNearestGPSRow(e.latlng.lat, e.latlng.lng);
-    if (!row || !row.lat || Math.abs(row.lat) < 0.001) return;
+    const clickedLatLng = e.latlng;
+    const previewLine = getSplitLineLatLngs(clickedLatLng, getSetting('map_splitLineLength', 6));
+    if (!previewLine) return;
 
     const color = SPLIT_COLORS[placementMode] || '#d29922';
 
     if (placementPreviewMarker) {
-      placementPreviewMarker.setLatLng([row.lat, row.lon]);
+      placementPreviewMarker.setLatLngs(previewLine);
     } else {
-      placementPreviewMarker = L.circleMarker([row.lat, row.lon], {
-        radius: 9,
+      placementPreviewMarker = L.polyline(previewLine, {
         color: color,
-        fillColor: color,
-        fillOpacity: 0.4,
-        weight: 2,
-        dashArray: '4 4',
+        weight: 3,
+        opacity: 0.7,
+        dashArray: '8 6',
       }).addTo(map);
     }
-
-    placementPreviewMarker.setStyle({ color, fillColor: color });
   }
 
   // ---- Full map update ----
@@ -444,11 +552,17 @@ const MapView = (() => {
 
   // ---- Compute a perpendicular line across the track at a given point ----
   function computePerpendicularLine(point, lengthMeters) {
-    // Find the index of this point in allGpsPoints
+    return computePerpendicularLineAtLatLng(point.lat, point.lon, lengthMeters);
+  }
+
+  function computePerpendicularLineAtLatLng(lat, lon, lengthMeters) {
+    const row = DataStore.findNearestGPSRow(lat, lon);
+    if (!row || !row.timestamp) return null;
+
     let idx = -1;
     let bestDist = Infinity;
     for (let i = 0; i < allGpsPoints.length; i++) {
-      const d = Math.abs(allGpsPoints[i].timestamp - point.timestamp);
+      const d = Math.abs(allGpsPoints[i].timestamp - row.timestamp);
       if (d < bestDist) {
         bestDist = d;
         idx = i;
@@ -456,32 +570,27 @@ const MapView = (() => {
     }
     if (idx < 0) return null;
 
-    // Get track direction from neighboring points
     const prev = allGpsPoints[Math.max(0, idx - 3)];
     const next = allGpsPoints[Math.min(allGpsPoints.length - 1, idx + 3)];
 
     const dLat = next.lat - prev.lat;
     const dLon = next.lon - prev.lon;
-
-    // Perpendicular direction (rotate 90°)
     const perpLat = -dLon;
     const perpLon = dLat;
 
-    // Normalize and scale to desired length in degrees (rough approximation)
     const mag = Math.sqrt(perpLat * perpLat + perpLon * perpLon);
     if (mag < 1e-10) return null;
 
-    // Convert meters to approximate degrees (1° lat ≈ 111320m, 1° lon ≈ 111320*cos(lat))
     const latDeg = lengthMeters / 111320;
-    const lonDeg = lengthMeters / (111320 * Math.cos(point.lat * Math.PI / 180));
+    const lonDeg = lengthMeters / (111320 * Math.cos(lat * Math.PI / 180));
 
     const scale = 1 / mag;
     const offLat = perpLat * scale * latDeg;
     const offLon = perpLon * scale * lonDeg;
 
     return [
-      [point.lat - offLat, point.lon - offLon],
-      [point.lat + offLat, point.lon + offLon],
+      [lat - offLat, lon - offLon],
+      [lat + offLat, lon + offLon],
     ];
   }
 
@@ -497,22 +606,26 @@ const MapView = (() => {
       return;
     }
 
-    for (const s of allSplits) {
+    for (let i = 0; i < allSplits.length; i++) {
+      const s = allSplits[i];
       const row = DataStore.findNearestRow(s.time);
       if (row && row.lat && row.lon && Math.abs(row.lat) > 0.001) {
-        addSplitMarkerAtPoint(row, s.type, s.label, s);
+        addSplitMarkerAtPoint(row, s.type, s.label, s, i);
       }
     }
   }
 
-  function addSplitMarkerAtPoint(point, type, label, splitInfo) {
+  function addSplitMarkerAtPoint(point, type, label, splitInfo, idx) {
     const color = SPLIT_COLORS[type] || '#d29922';
     const isDraggable = splitInfo !== null;
     const baseLine = getSetting('map_splitLineLength', 6);
     const lineLength = type === 'intermediate' ? baseLine * 0.7 : baseLine;
 
-    // Draw perpendicular line across the track
-    const perpLine = computePerpendicularLine(point, lineLength);
+    const splitLocation = getSplitLineLocation(type, splitInfo, idx);
+    const lineSegment = splitLocation || createSplitLineSegmentFromCenter(point.lat, point.lon, lineLength);
+    const lineCenter = getSplitLineCenter(lineSegment) || point;
+
+    const perpLine = getSplitLineLatLngs(lineSegment, lineLength);
     if (perpLine) {
       const lineWeight = type === 'intermediate' ? 3 : 4;
       L.polyline(perpLine, {
@@ -525,23 +638,20 @@ const MapView = (() => {
 
     // Invisible draggable marker on top (for interaction)
     if (isDraggable) {
-      const hitSize = 20;
+      const hitSize = 26;
       const hitIcon = L.divIcon({
         className: 'split-hit-area',
         html: `<div style="
           width: ${hitSize}px;
           height: ${hitSize}px;
-          border-radius: 50%;
-          background: ${color};
-          opacity: 0.25;
-          border: 2px solid ${color};
+          background: rgba(255,255,255,0);
           cursor: grab;
         "></div>`,
         iconSize: [hitSize, hitSize],
         iconAnchor: [hitSize / 2, hitSize / 2],
       });
 
-      const marker = L.marker([point.lat, point.lon], {
+      const marker = L.marker([lineCenter.lat, lineCenter.lon], {
         icon: hitIcon,
         draggable: true,
       });
@@ -553,7 +663,7 @@ const MapView = (() => {
         const latlng = e.target.getLatLng();
         const nearestRow = DataStore.findNearestGPSRow(latlng.lat, latlng.lng);
         if (nearestRow && nearestRow.lat && Math.abs(nearestRow.lat) > 0.001) {
-          e.target.setLatLng([nearestRow.lat, nearestRow.lon]);
+          e.target.setLatLng([latlng.lat, latlng.lng]);
         }
       });
 
@@ -567,17 +677,26 @@ const MapView = (() => {
         const splits = DataStore.getSplits();
 
         if (splitInfo.type === 'start') {
-          DataStore.setSplits({ start: newTimestamp });
+          const lineSegment = createSplitLineSegmentFromCenter(latlng.lat, latlng.lng, getSetting('map_splitLineLength', 6));
+          DataStore.setSplits({ start: newTimestamp, line_segments: { start: lineSegment } });
           showToast(`Partenza spostata a ${newRelTime.toFixed(3)}s`, 'success');
         } else if (splitInfo.type === 'end') {
-          DataStore.setSplits({ end: newTimestamp });
+          const lineSegment = createSplitLineSegmentFromCenter(latlng.lat, latlng.lng, getSetting('map_splitLineLength', 6));
+          DataStore.setSplits({ end: newTimestamp, line_segments: { end: lineSegment } });
           showToast(`Arrivo spostato a ${newRelTime.toFixed(3)}s`, 'success');
         } else if (splitInfo.type === 'intermediate') {
           const ints = [...(splits.intermediates || [])];
           const idx = ints.indexOf(splitInfo.time);
           if (idx !== -1) {
             ints[idx] = newTimestamp;
-            DataStore.setSplits({ intermediates: ints });
+            const existingSegments = splits.line_segments || { start: null, end: null, intermediates: [] };
+            const nextSegments = {
+              start: existingSegments.start,
+              end: existingSegments.end,
+              intermediates: [...(existingSegments.intermediates || [])],
+            };
+            nextSegments.intermediates[idx] = createSplitLineSegmentFromCenter(latlng.lat, latlng.lng, getSetting('map_splitLineLength', 6));
+            DataStore.setSplits({ intermediates: ints, line_segments: { ...nextSegments } });
             showToast(`Intermedio spostato a ${newRelTime.toFixed(3)}s`, 'success');
           }
         }
@@ -605,7 +724,8 @@ const MapView = (() => {
       iconAnchor: [-12, 12],
     });
 
-    const labelMarker = L.marker([point.lat, point.lon], { icon: labelIcon, interactive: false });
+    const labelCenter = getSplitLineCenter(lineSegment) || point;
+    const labelMarker = L.marker([labelCenter.lat, labelCenter.lon], { icon: labelIcon, interactive: false });
     splitLabelsLayer.addLayer(labelMarker);
   }
 

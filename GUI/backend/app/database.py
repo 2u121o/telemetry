@@ -151,7 +151,7 @@ CREATE TABLE IF NOT EXISTS runs (
     -- Sensor settings used during import
     sensor_settings TEXT DEFAULT '{}',
     -- Splits (stored as JSON for flexibility)
-    splits_json     TEXT DEFAULT '{"start":null,"end":null,"intermediates":[]}',
+    splits_json     TEXT DEFAULT '{"start":null,"end":null,"intermediates":[],"line_segments":{"start":null,"end":null,"intermediates":[]}}',
     -- Chart configs (stored as JSON)
     chart_configs   TEXT DEFAULT '[]',
     -- Filter configs

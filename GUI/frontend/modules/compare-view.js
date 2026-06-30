@@ -134,12 +134,34 @@ function applyTravelConversion(data, columns) {
 function computeColumnMeta(data, columns) {
   const meta = {};
   for (const col of columns) {
-    const values = data.map(r => r[col]).filter(v => v !== null && v !== undefined && !isNaN(v));
-    const n = values.length;
-    if (n === 0) { meta[col] = { min: 0, max: 0, mean: 0, unit: KNOWN_UNITS[col] || '', label: KNOWN_LABELS[col] || col }; continue; }
-    const min = Math.min(...values);
-    const max = Math.max(...values);
-    const mean = values.reduce((a, b) => a + b, 0) / n;
+    let min = 0;
+    let max = 0;
+    let sum = 0;
+    let n = 0;
+
+    for (let i = 0; i < data.length; i++) {
+      const value = data[i][col];
+      if (value === null || value === undefined || Number.isNaN(value)) continue;
+      const num = Number(value);
+      if (!Number.isFinite(num)) continue;
+
+      if (n === 0) {
+        min = max = num;
+      } else {
+        if (num < min) min = num;
+        if (num > max) max = num;
+      }
+
+      sum += num;
+      n += 1;
+    }
+
+    if (n === 0) {
+      meta[col] = { min: 0, max: 0, mean: 0, unit: KNOWN_UNITS[col] || '', label: KNOWN_LABELS[col] || col };
+      continue;
+    }
+
+    const mean = sum / n;
     meta[col] = { min, max, mean, unit: KNOWN_UNITS[col] || '', label: KNOWN_LABELS[col] || col, count: n };
   }
   return meta;

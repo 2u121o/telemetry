@@ -36,7 +36,7 @@ const DEFAULTS = {
   travel_f_strokeMm: 170,
   travel_f_factor: 1.0,
   travel_f_inverted: false,
-  map_splitLineLength: 1,
+  map_splitLineLength: 1600,
   map_trackWeight: 3.5,
   map_inactiveOpacity: 0.45,
   map_showLabels: true,
